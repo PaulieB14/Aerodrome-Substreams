@@ -1,0 +1,10 @@
+/Users/paulbarba/Desktop/aerodrome-substreams/target/release/deps/substreams_macro-985fdabd8c155170.d: /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/lib.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/assertions.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/config.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/errors.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/handler.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/store.rs
+
+/Users/paulbarba/Desktop/aerodrome-substreams/target/release/deps/libsubstreams_macro-985fdabd8c155170.dylib: /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/lib.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/assertions.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/config.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/errors.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/handler.rs /Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/store.rs
+
+/Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/lib.rs:
+/Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/assertions.rs:
+/Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/config.rs:
+/Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/errors.rs:
+/Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/handler.rs:
+/Users/paulbarba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/substreams-macro-0.6.2/src/store.rs:

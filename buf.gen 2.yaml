@@ -1,0 +1,10 @@
+version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/streamingfast/substreams
+plugins:
+  - plugin: buf.build/protocolbuffers/rust
+    out: proto
+    opt:
+      - package_name=proto
