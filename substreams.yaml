@@ -1,9 +1,9 @@
 specVersion: v0.1.0
 package:
   name: "aerodrome-substreams"
-  version: v0.1.1
+  version: v0.1.2
   description: "Real-time Aerodrome Finance data streaming for Base blockchain - swaps, liquidity, governance, and rewards"
-  url: "https://github.com/paulbarba/aerodrome-substreams"
+  url: "https://github.com/PaulieB14/Aerodrome-Substreams"
   image: "/Users/paulbarba/Desktop/download.jpeg"
 
 imports:
