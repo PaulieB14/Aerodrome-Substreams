@@ -1,4 +1,38 @@
+# Rust
 target/
 Cargo.lock
 *.wasm
 *.d
+
+# Build artifacts
+*.spkg
+*.so
+*.dylib
+*.dll
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+test_*.py
+push_*.sh
+
+# Generated files
+pb/
+generated/
+
+# Environment
+.env
+.env.local
