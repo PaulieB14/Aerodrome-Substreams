@@ -1,0 +1,60 @@
+{
+  "example_block": {
+    "number": 36000000,
+    "hash": "0x4fe3c6dc269e55be5b92720052af33a58ba8e5f67dfd2e66cc00676eacd9b1e9",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "gasUsed": "21000000",
+    "gasLimit": "30000000",
+    "transactions": [
+      {
+        "hash": "0xa000251ee3f28db910c058135cf09694506279f94fbf4f7306d72bbd14a227d3",
+        "from": "0x9cc9e01ed66b3c5ffbeb33029b6b08663b6de88b",
+        "to": "0x9ea798232fe94c1ae7defb1cc7443560e275e652",
+        "value": "0x071e772967aa",
+        "gasUsed": "21000",
+        "status": "SUCCEEDED",
+        "type": "TRX_TYPE_DYNAMIC_FEE",
+        "logs": [
+          {
+            "address": "0x4200000000000000000000000000000000000006",
+            "topics": [
+              "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000ed7dc202669a312"
+          }
+        ]
+      }
+    ],
+    "storage_changes": [
+      {
+        "address": "0x4200000000000000000000000000000000000006",
+        "key": "0x65c9ce8c479fe0523f63b069564e44838c00247d9448dc9038c2c2547d7e2058",
+        "oldValue": "0x0000000000000000000000000000000000000000000000000f43849797f7e2d4",
+        "newValue": "0x000000000000000000000000000000000000000000000000006ba877718e3fc2"
+      }
+    ],
+    "gas_changes": [
+      {
+        "newValue": "973651",
+        "reason": "REASON_CALL_INITIAL_BALANCE"
+      },
+      {
+        "oldValue": "972125",
+        "newValue": "15187",
+        "reason": "REASON_STATIC_CALL"
+      }
+    ]
+  },
+  "aerodrome_contracts": {
+    "router": "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",
+    "factory": "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
+    "voter": "0x16613524e02ad97eDfeF371bC883F2F5d6C480A5",
+    "aero_token": "0x940181a94A35A4569E4529A3CDfB74e38FD98631"
+  },
+  "performance_metrics": {
+    "blocks_processed": 5,
+    "total_bytes": 26066215,
+    "processing_time": "2.3 seconds",
+    "blocks_per_second": 2.17
+  }
+}
