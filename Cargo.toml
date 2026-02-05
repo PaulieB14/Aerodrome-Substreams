@@ -1,13 +1,38 @@
 [package]
 name = "aerodrome-substreams"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
+description = "High-performance Substreams for Aerodrome Finance on Base with OHLCV candles, SQL sink support (PostgreSQL/ClickHouse), and delta updates"
+license = "MIT"
+repository = "https://github.com/PaulieB14/Aerodrome-Substreams"
+keywords = ["base", "aerodrome", "dex", "substreams", "blockchain"]
+categories = ["cryptography::cryptocurrencies"]
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
+# Substreams core
 substreams = "0.6.0"
 substreams-ethereum = "0.10.6"
+
+# Database sink support
+substreams-database-change = "2.0"
+
+# Protobuf serialization
+prost = "0.13"
+prost-types = "0.13"
+
+# Utilities
 hex = "0.4"
+hex-literal = "0.4"
 anyhow = "1.0"
+num-bigint = "0.4"
+
+[build-dependencies]
+substreams-ethereum = "0.10.6"
+
+[profile.release]
+lto = true
+opt-level = 'z'
+strip = true

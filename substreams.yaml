@@ -1,13 +1,13 @@
 specVersion: v0.1.0
 package:
   name: "aerodrome-substreams"
-  version: v0.1.2
-  description: "Real-time Aerodrome Finance data streaming for Base blockchain - swaps, liquidity, governance, and rewards"
+  version: v0.2.0
+  description: "High-performance Substreams for Aerodrome Finance on Base with OHLCV candles, SQL sink support, and delta updates"
   url: "https://github.com/PaulieB14/Aerodrome-Substreams"
-  image: "/Users/paulbarba/Desktop/download.jpeg"
 
 imports:
   eth: https://github.com/streamingfast/substreams-ethereum/releases/download/v0.10.6/substreams-ethereum-v0.10.6.spkg
+  database: https://github.com/streamingfast/substreams-sink-database-changes/releases/download/v3.0.0/substreams-sink-database-changes-v3.0.0.spkg
 
 protobuf:
   files:
@@ -21,9 +21,60 @@ binaries:
     file: ./target/wasm32-unknown-unknown/release/aerodrome_substreams.wasm
 
 modules:
-  - name: map_blocks
+  # Map swap events from blocks
+  - name: map_swaps
     kind: map
     inputs:
       - source: sf.ethereum.type.v2.Block
     output:
-      type: proto:sf.ethereum.type.v2.Block
+      type: proto:aerodrome.SwapEvents
+
+  # Map liquidity events (Mint/Burn)
+  - name: map_liquidity
+    kind: map
+    inputs:
+      - source: sf.ethereum.type.v2.Block
+    output:
+      type: proto:aerodrome.LiquidityEvents
+
+  # Map sync events (reserve updates)
+  - name: map_syncs
+    kind: map
+    inputs:
+      - source: sf.ethereum.type.v2.Block
+    output:
+      type: proto:aerodrome.SyncEvents
+
+  # Store cumulative swap volumes by pool
+  - name: store_swap_volumes
+    kind: store
+    updatePolicy: add
+    valueType: bigint
+    inputs:
+      - map: map_swaps
+
+  # Store unique traders
+  - name: store_unique_traders
+    kind: store
+    updatePolicy: set_if_not_exists
+    valueType: string
+    inputs:
+      - map: map_swaps
+
+  # Store pool statistics
+  - name: store_pool_stats
+    kind: store
+    updatePolicy: add
+    valueType: bigint
+    inputs:
+      - map: map_swaps
+
+  # Database sink output
+  - name: db_out
+    kind: map
+    inputs:
+      - map: map_swaps
+    output:
+      type: proto:sf.substreams.sink.database.v1.DatabaseChanges
+
+network: base
