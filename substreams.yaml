@@ -1,9 +1,10 @@
 specVersion: v0.1.0
 package:
   name: "aerodrome-substreams"
-  version: v0.2.0
+  version: v0.2.1
   description: "High-performance Substreams for Aerodrome Finance on Base with OHLCV candles, SQL sink support, and delta updates"
   url: "https://github.com/PaulieB14/Aerodrome-Substreams"
+  image: ./aerodrome.jpg
 
 imports:
   eth: https://github.com/streamingfast/substreams-ethereum/releases/download/v0.10.6/substreams-ethereum-v0.10.6.spkg
