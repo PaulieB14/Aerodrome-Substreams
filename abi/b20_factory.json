@@ -1,0 +1,9 @@
+[
+  {"type":"event","name":"B20Created","anonymous":false,"inputs":[
+    {"indexed":true,"name":"token","type":"address"},
+    {"indexed":true,"name":"variant","type":"uint8"},
+    {"indexed":false,"name":"name","type":"string"},
+    {"indexed":false,"name":"symbol","type":"string"},
+    {"indexed":false,"name":"decimals","type":"uint8"},
+    {"indexed":false,"name":"variantEventParams","type":"bytes"}]}
+]

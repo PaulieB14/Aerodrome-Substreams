@@ -1,0 +1,10 @@
+[
+  {"type":"event","name":"PoolCreated","anonymous":false,"inputs":[
+    {"indexed":true,"name":"token0","type":"address"},
+    {"indexed":true,"name":"token1","type":"address"},
+    {"indexed":true,"name":"tickSpacing","type":"int24"},
+    {"indexed":false,"name":"pool","type":"address"}]},
+  {"type":"event","name":"TickSpacingEnabled","anonymous":false,"inputs":[
+    {"indexed":true,"name":"tickSpacing","type":"int24"},
+    {"indexed":true,"name":"fee","type":"uint24"}]}
+]

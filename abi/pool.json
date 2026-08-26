@@ -1,46 +1,30 @@
 [
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "sender", "type": "address"},
-      {"indexed": true, "internalType": "address", "name": "to", "type": "address"},
-      {"indexed": false, "internalType": "uint256", "name": "amount0In", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "amount1In", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "amount0Out", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "amount1Out", "type": "uint256"}
-    ],
-    "name": "Swap",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "sender", "type": "address"},
-      {"indexed": false, "internalType": "uint256", "name": "amount0", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "amount1", "type": "uint256"},
-      {"indexed": true, "internalType": "address", "name": "to", "type": "address"}
-    ],
-    "name": "Mint",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "sender", "type": "address"},
-      {"indexed": false, "internalType": "uint256", "name": "amount0", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "amount1", "type": "uint256"},
-      {"indexed": true, "internalType": "address", "name": "to", "type": "address"}
-    ],
-    "name": "Burn",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": false, "internalType": "uint112", "name": "reserve0", "type": "uint112"},
-      {"indexed": false, "internalType": "uint112", "name": "reserve1", "type": "uint112"}
-    ],
-    "name": "Sync",
-    "type": "event"
-  }
+  {"type":"event","name":"Swap","anonymous":false,"inputs":[
+    {"indexed":true,"name":"sender","type":"address"},
+    {"indexed":true,"name":"to","type":"address"},
+    {"indexed":false,"name":"amount0In","type":"uint256"},
+    {"indexed":false,"name":"amount1In","type":"uint256"},
+    {"indexed":false,"name":"amount0Out","type":"uint256"},
+    {"indexed":false,"name":"amount1Out","type":"uint256"}]},
+  {"type":"event","name":"Mint","anonymous":false,"inputs":[
+    {"indexed":true,"name":"sender","type":"address"},
+    {"indexed":false,"name":"amount0","type":"uint256"},
+    {"indexed":false,"name":"amount1","type":"uint256"}]},
+  {"type":"event","name":"Burn","anonymous":false,"inputs":[
+    {"indexed":true,"name":"sender","type":"address"},
+    {"indexed":true,"name":"to","type":"address"},
+    {"indexed":false,"name":"amount0","type":"uint256"},
+    {"indexed":false,"name":"amount1","type":"uint256"}]},
+  {"type":"event","name":"Sync","anonymous":false,"inputs":[
+    {"indexed":false,"name":"reserve0","type":"uint256"},
+    {"indexed":false,"name":"reserve1","type":"uint256"}]},
+  {"type":"event","name":"Fees","anonymous":false,"inputs":[
+    {"indexed":true,"name":"sender","type":"address"},
+    {"indexed":false,"name":"amount0","type":"uint256"},
+    {"indexed":false,"name":"amount1","type":"uint256"}]},
+  {"type":"event","name":"Claim","anonymous":false,"inputs":[
+    {"indexed":true,"name":"sender","type":"address"},
+    {"indexed":true,"name":"recipient","type":"address"},
+    {"indexed":false,"name":"amount0","type":"uint256"},
+    {"indexed":false,"name":"amount1","type":"uint256"}]}
 ]

@@ -6,6 +6,7 @@ Cargo.lock
 
 # Build artifacts
 *.spkg
+substreams.test.yaml
 *.so
 *.dylib
 *.dll
@@ -30,8 +31,11 @@ test_*.py
 push_*.sh
 
 # Generated files
-pb/
+/pb/
 generated/
+# src/pb and src/abi ARE committed: the crate does not build without them
+!src/pb/
+!src/abi/
 
 # Environment
 .env

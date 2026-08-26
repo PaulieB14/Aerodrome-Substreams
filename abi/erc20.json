@@ -1,0 +1,4 @@
+[
+  {"type":"function","name":"decimals","constant":true,"stateMutability":"view","payable":false,"inputs":[],"outputs":[{"name":"","type":"uint8"}]},
+  {"type":"function","name":"symbol","constant":true,"stateMutability":"view","payable":false,"inputs":[],"outputs":[{"name":"","type":"string"}]}
+]

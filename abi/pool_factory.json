@@ -1,0 +1,51 @@
+[
+  {
+    "type": "event",
+    "name": "PoolCreated",
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "token0",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "name": "token1",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "name": "stable",
+        "type": "bool"
+      },
+      {
+        "indexed": false,
+        "name": "pool",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "poolCount",
+        "type": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "SetCustomFee",
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "pool",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "fee",
+        "type": "uint256"
+      }
+    ]
+  }
+]

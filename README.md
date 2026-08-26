@@ -1,386 +1,243 @@
 # Aerodrome Finance Substreams
 
-[![Substreams](https://img.shields.io/badge/Substreams-v0.2.0-blue)](https://substreams.dev)
+[![Substreams](https://img.shields.io/badge/Substreams-v0.3.0-blue)](https://substreams.dev)
 [![Base](https://img.shields.io/badge/Network-Base-blue)](https://base.org)
 [![Aerodrome](https://img.shields.io/badge/DEX-Aerodrome-purple)](https://aerodrome.finance)
 [![SQL Sink](https://img.shields.io/badge/Sink-PostgreSQL%20%7C%20ClickHouse-green)](https://docs.substreams.dev)
 
-High-performance Substreams for tracking Aerodrome Finance DEX on Base with **OHLCV candles**, **SQL sink support**, **delta updates**, and comprehensive swap analytics.
+Substreams for Aerodrome Finance on Base, covering **both** Aerodrome venues and the
+**Coinbase tokenized stocks** that launched on it.
 
-## Features
+| Venue | Events | Covered |
+|---|---|---|
+| **Aerodrome v2** — volatile / stable AMM | `Swap`, `Mint`, `Burn`, `Sync` | ✅ |
+| **Slipstream** — concentrated liquidity | `Swap`, `Mint`, `Burn`, `Collect` | ✅ |
+| **Base B20** — tokenized stocks and other RWAs | 19 token events incl. corporate actions | ✅ |
 
-| Feature | Description |
-|---------|-------------|
-| **OHLCV Candles** | Real-time candlestick data at 5min, 1hr, 4hr, and daily intervals |
-| **SQL Database Sink** | Stream directly to PostgreSQL or ClickHouse |
-| **Delta Updates** | Efficient aggregations using `set_if_null`, `set`, `max`, `min`, `add` operations |
-| **Liquidity Events** | Track Mint/Burn events for LP activity |
-| **Sync Events** | Monitor reserve updates across pools |
-| **Persistent Stores** | Track volumes, unique traders, and pool stats across blocks |
-| **Production Ready** | Optimized Rust with unit tests and comprehensive error handling |
+## Tokenized stocks
 
-## Quick Start
+Coinbase's tokenized stocks are [B20](https://github.com/base/base-std/tree/main/docs/B20)
+tokens, and on Aerodrome they trade **exclusively in Slipstream concentrated-liquidity
+pools**. Slipstream inherits Uniswap V3's event ABI, which is a different `Swap` signature
+from the v2 AMM:
 
-### Install & Authenticate
+| Venue | `Swap` signature | topic0 |
+|---|---|---|
+| Aerodrome v2 | `Swap(address,address,uint256,uint256,uint256,uint256)` | `0xb3e27736…` |
+| Slipstream | `Swap(address,address,int256,int256,uint160,uint128,int24)` | `0xc42079f9…` |
 
-```bash
-# Install Substreams CLI
-curl -sSL https://substreams.dev/install.sh | bash
+A v2-only decoder shares no topic with the stock pools, so it sees none of that volume.
+Both are decoded here.
 
-# Authenticate with StreamingFast
-substreams auth
+### New tickers index themselves
+
+Pools are discovered from factory `PoolCreated` events rather than from a hardcoded
+list, and B20-ness is recovered from the token address itself. Every B20 is created by
+the singleton `IB20Factory` precompile at a deterministic address:
+
+```
+[ B20 prefix: 10 bytes ][ variant: 1 byte ][ bytes9(keccak256(deployer, salt)) ]
+  0xb2 + nine 0x00        0x00 = Asset
+                          0x01 = Stablecoin
 ```
 
-### Run Analytics
+So when a new tokenized asset lists and someone opens an Aerodrome pool for it, the pool
+appears in the registry on the block it is created, already flagged — **no code change, no
+repackage, no resync.** The variant byte is read straight from the address, so `Asset` and
+`Stablecoin` tokens are distinguished with no RPC call, and a variant introduced by a later
+hardfork still indexes rather than being dropped.
 
-```bash
-# Stream Aerodrome swap events
-substreams run aerodrome-substreams-v0.2.0.spkg \
-  map_swaps \
-  -e base.substreams.pinax.network:443 \
-  -s 10000000 -t +100
-```
+> Matching on 11 bytes — the prefix plus a hardcoded `Asset` variant byte — is a tempting
+> shortcut and a wrong one: it silently rejects every `Stablecoin` and every future variant.
+> Verified against the live precompile, which reports `isB20 == true` for the 10-byte prefix
+> with any variant byte and `false` as soon as the prefix itself differs.
 
-### Stream to PostgreSQL
+### Corporate actions
 
-```bash
-# 1. Start PostgreSQL
-docker run -d --name postgres \
-  -e POSTGRES_DB=aerodrome \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=password \
-  -p 5432:5432 \
-  postgres:15
+B20 handles splits and reinvested dividends with a **multiplier** rather than by rewriting
+balances. That distinction drives how this package models price:
 
-# 2. Setup schema
-substreams-sink-sql setup \
-  "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.2.0.spkg
+- `balanceOf`, `transfer` and `totalSupply` stay **raw**, so pool reserves and the raw pool
+  price are mechanically **unaffected** by a multiplier change. Raw OHLCV stays continuous
+  across a split by construction.
+- The **share-denominated** price is the raw price divided by the multiplier in force. A 2:1
+  split halves it.
 
-# 3. Run sink
-substreams-sink-sql run \
-  "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.2.0.spkg
-```
+`b20_multiplier_schedule` records the timeline and `b20_effective_multiplier(token, ts)`
+resolves it. Two details matter:
 
-### Stream to ClickHouse
+- A scheduled update names a **future** `effectiveAt`, and the flip is **lazy** — nothing is
+  emitted when it actually takes effect. Resolve by timestamp, never by block.
+- The spec asks indexers to treat effects emitted **outside** an `Announcement` /
+  `EndAnnouncement` bracket as emergency overrides. Every event carries `in_announcement`,
+  and `b20_unannounced_actions` surfaces them.
 
-```bash
-# 1. Start ClickHouse
-docker run -d --name clickhouse \
-  -p 8123:8123 -p 9000:9000 \
-  clickhouse/clickhouse-server:latest
+Both multiplier generations are decoded: Beryl (live today) emits only the deprecated
+`MultiplierUpdated`, while Cobalt adds ERC-8056's `UIMultiplierUpdated`.
 
-# 2. Setup and run with ClickHouse engine
-substreams-sink-sql setup \
-  "clickhouse://default:@localhost:9000/default" \
-  aerodrome-substreams-v0.2.0.spkg \
-  --engine=clickhouse
+### Metadata is mutable
 
-substreams-sink-sql run \
-  "clickhouse://default:@localhost:9000/default" \
-  aerodrome-substreams-v0.2.0.spkg \
-  --engine=clickhouse
-```
+Every one of the 13 tokenized stocks issued so far has been **renamed at least once** —
+`AAPLc` was created as `AAPL` and renamed at block 49,485,877. A symbol captured once at
+pool creation goes stale, so `NameUpdated` / `SymbolUpdated` are indexed and the
+`b20_token_current` view resolves the live value.
+
+### What B20-ness does and does not prove
+
+`createB20` is **permissionless** — anyone can create a B20 and name it anything. The
+address prefix proves a token is in the B20 namespace; it does **not** prove who issued it.
+Confirm the issuer before presenting a pool as a given company's stock. `stock_pools`
+narrows to the `asset` variant, which is a necessary filter, not a sufficient one.
 
 ## Architecture
 
 ```
 sf.ethereum.type.v2.Block
 │
-├─► map_swaps ──► SwapEvents
-│   │
-│   ├─► store_swap_volumes (bigint, add)
-│   │   └─► pool:{addr}:volume, daily:{date}:volume, total:volume
-│   │
-│   ├─► store_unique_traders (string, set_if_not_exists)
-│   │   └─► trader:{wallet}, daily:{date}:trader:{wallet}
-│   │
-│   ├─► store_pool_stats (bigint, add)
-│   │   └─► pool:{addr}:trade_count
-│   │
-│   └─► db_out ──► DatabaseChanges (SQL Sink)
-│       │
-│       ├─► aerodrome_swaps (individual trades)
-│       ├─► candles (OHLCV at 5m/1h/4h/1d)
-│       ├─► pool_stats (per-pool metrics)
-│       ├─► trader_stats (wallet activity)
-│       ├─► daily_stats / hourly_stats
-│       └─► protocol_metrics (global totals)
+├─► map_pools ─────► Pools               PoolCreated from 3 factories
+│      └─► store_pools                   registry: tokens, venue, B20 flag
 │
-├─► map_liquidity ──► LiquidityEvents
-│   └─► Mint/Burn events for LP tracking
+├─► map_swaps ─────► SwapEvents          v2, enriched from the registry
+├─► map_liquidity ─► LiquidityEvents     v2 Mint / Burn
+├─► map_syncs ─────► SyncEvents          v2 reserves
 │
-└─► map_syncs ──► SyncEvents
-    └─► Reserve updates across pools
+├─► map_cl_swaps ──► ClSwaps             Slipstream — tokenized stocks
+├─► map_cl_liquidity ► ClLiquidityEvents Slipstream Mint / Burn / Collect
+│
+├─► map_b20_events ► B20Events           token events + multiplier timeline
+│
+└─► db_out ────────► DatabaseChanges     PostgreSQL / ClickHouse
 ```
 
-## Database Schema
+The registry join is not just enrichment for Slipstream. Its `Swap` topic is **byte-identical
+to Uniswap V3's** and to every V3 fork on Base, so membership in the factory-built registry is
+the only thing that identifies a log as Aerodrome's. A swap from an unknown pool is skipped
+rather than emitted unenriched.
 
-### Core Tables
+For v2 the asymmetry is deliberate: Aerodrome reorders Uniswap V2's `Swap` parameters, so that
+topic **is** effectively unique to Aerodrome on Base (45 of 45 sampled emitters returned `true`
+from `PoolFactory.isPool()`), and v2 swaps are emitted whether or not the pool is known.
 
-| Table | Description | Delta Operations |
-|-------|-------------|------------------|
-| `aerodrome_swaps` | Individual swap events | `create_row` |
-| `candles` | OHLCV candlestick data | `set_if_null(open)`, `set(close)`, `max(high)`, `min(low)`, `add(volume)` |
-| `pool_stats` | Per-pool statistics | `add(swap_count, volume)`, `set(last_swap)` |
-| `trader_stats` | Wallet activity | `add(swaps, volume)`, `set(last_swap)` |
-| `daily_stats` | Daily aggregations | `add(swap_count, volume)` |
-| `hourly_stats` | Hourly aggregations | `add(swap_count, volume)` |
-| `protocol_metrics` | Global protocol metrics | `add(swaps, volume)` |
+## Contract addresses (Base)
 
-### Candle Intervals
+Every address below was verified by calling it on Base.
 
-| Interval | Seconds | Use Case |
-|----------|---------|----------|
-| 5 minutes | 300 | High-frequency trading, scalping |
-| 1 hour | 3600 | Intraday analysis |
-| 4 hours | 14400 | Swing trading |
-| 1 day | 86400 | Long-term trends |
+| Contract | Address | Deployed |
+|---|---|---|
+| v2 `PoolFactory` | `0x420DD381b31aEf6683db6B902084cB0FFECe40Da` | block 3,200,559 |
+| Slipstream `CLFactory` v1 | `0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A` | block 13,843,704 |
+| Slipstream `CLFactory` v2 | `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef` | block 44,394,724 |
+| `Voter` | `0x16613524e02ad97eDfeF371bC883F2F5d6C480A5` | |
+| `AERO` | `0x940181a94A35A4569E4529A3CDfB74e38FD98631` | block 3,200,550 |
+| `IB20Factory` precompile | `0xB20f000000000000000000000000000000000000` | |
 
-### Views (PostgreSQL)
+Both CL factories are live and share the same `Voter`. Every tokenized-stock pool at launch
+was created by **CLFactory v2**, so a listener watching only v1 sees none of them.
+
+## Quick start
+
+```bash
+substreams auth
+substreams build
+
+# Slipstream swaps, tokenized stocks included
+substreams run substreams.yaml map_cl_swaps -e base -s 49273390 -t +5000
+
+# Pool discovery — watch stock pools appear
+substreams run substreams.yaml map_pools -e base -s 49273390 -t +250
+
+# B20 token events: renames, corporate actions, halts
+substreams run substreams.yaml map_b20_events -e base -s 49480000 -t +10000
+```
+
+### Backfill cost
+
+`initialBlock` is the v2 `PoolFactory` deployment (**3,200,559**) so the registry covers all of
+Aerodrome's history. To index tokenized stocks only, set every module's `initialBlock` to
+**44,394,724** (CLFactory v2). Every stock pool lives on that factory, and the backfill is
+roughly 10× shorter.
+
+## Stream to SQL
+
+```bash
+substreams-sink-sql setup "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
+  aerodrome-substreams-v0.3.0.spkg
+substreams-sink-sql run   "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
+  aerodrome-substreams-v0.3.0.spkg
+
+# ClickHouse
+substreams-sink-sql setup "clickhouse://default:@localhost:9000/default" \
+  aerodrome-substreams-v0.3.0.spkg --engine=clickhouse
+```
+
+### Tables
+
+| Table | Contents |
+|---|---|
+| `pools` | Pool registry with token metadata and the B20 flag |
+| `aerodrome_swaps` | v2 swaps |
+| `aerodrome_cl_swaps` | Slipstream swaps, with `sqrtPriceX96` and tick |
+| `aerodrome_cl_liquidity` | Slipstream `Mint` / `Burn` / `Collect` |
+| `b20_events` | Every B20 token event, flattened |
+| `b20_tokens` | `B20Created` birth certificates |
+| `b20_multiplier_schedule` | Corporate-action timeline |
+
+### Views
+
+| View | Answers |
+|---|---|
+| `stock_pools` | Which pools trade tokenized stocks |
+| `stock_swaps` | Every stock trade, priced in the quote asset |
+| `stock_candles(interval)` | OHLCV at any bucket size (300 / 3600 / 14400 / 86400) |
+| `stock_pools_24h` | 24h volume, trades, high / low per stock pool |
+| `b20_token_current` | Live name and symbol, honouring renames |
+| `b20_corporate_actions` | Splits and dividends, with the announcement that disclosed them |
+| `b20_unannounced_actions` | Changes made outside an announcement bracket |
+| `b20_pause_history` | Trading halts |
+| `cl_swaps_priced` | All Slipstream swaps with a decimal-adjusted price |
 
 ```sql
--- Latest candles for all pools
-SELECT * FROM latest_candles;
+-- What are the tokenized stocks doing today?
+SELECT b20_symbol, trades_24h, volume_24h, high_24h, low_24h FROM stock_pools_24h;
 
--- Top pools by 24h volume
-SELECT * FROM top_pools_24h;
+-- Hourly candles for one stock pool
+SELECT * FROM stock_candles(3600, '0xa3b1e3f9747065e2073722ff4c9027d3ea4994f0');
 
--- Top traders by volume
-SELECT * FROM top_traders;
-
--- Daily volume trend (30 days)
-SELECT * FROM daily_volume_trend;
-
--- 5-minute candles (24h)
-SELECT * FROM candles_5m_24h WHERE pool_address = '0x...';
-
--- Hourly candles (7 days)
-SELECT * FROM candles_1h_7d WHERE pool_address = '0x...';
-
--- Daily candles (30 days)
-SELECT * FROM candles_1d_30d WHERE pool_address = '0x...';
-
--- Get candles for a specific pool
-SELECT * FROM get_candles('0x...', 3600, 24);
+-- Any pending corporate action?
+SELECT symbol, new_multiplier, effective_at FROM b20_corporate_actions WHERE pending;
 ```
 
-### Views (ClickHouse)
+Prices are derived from `sqrtPriceX96` — the pool's post-trade price — rather than from an
+output/input ratio, which yields a price in one direction and its reciprocal in the other and
+makes a naive candle series alternate between the two.
 
-```sql
--- Finalized hourly candles
-SELECT * FROM v_candles_1h WHERE pool_address = '0x...' ORDER BY timestamp DESC;
-
--- Finalized daily candles
-SELECT * FROM v_candles_1d WHERE pool_address = '0x...' ORDER BY timestamp DESC;
-
--- Top pools by volume
-SELECT * FROM v_top_pools;
-
--- Top traders
-SELECT * FROM v_top_traders;
-
--- Daily unique traders
-SELECT * FROM v_daily_unique_traders;
-
--- Whale activity (large swaps)
-SELECT * FROM v_whale_swaps;
-```
-
-## Contract Addresses (Base)
-
-| Contract | Address |
-|----------|---------|
-| **Router** | `0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43` |
-| **Factory** | `0x420DD381b31aEf6683db6B902084cB0FFECe40Da` |
-| **Voter** | `0x16613524e02ad97eDfeF371bC883F2F5d6C480A5` |
-| **AERO Token** | `0x940181a94A35A4569E4529A3CDfB74e38FD98631` |
-| **Gauge Factory** | `0x35f35cA5B132CaDf2916BaB57639128eAC5bbcb5` |
-
-## Aerodrome Events Tracked
-
-| Event | Description |
-|-------|-------------|
-| **Swap** | Token swaps with amount0_in/out, amount1_in/out |
-| **Mint** | Liquidity additions (LP deposits) |
-| **Burn** | Liquidity removals (LP withdrawals) |
-| **Sync** | Reserve updates after any pool state change |
-
-## Example Queries
-
-### Get Candles for a Pool
-
-```sql
--- PostgreSQL: Use the helper function
-SELECT * FROM get_candles('0xPoolAddress', 3600, 24);
-
--- Or query directly
-SELECT
-    timestamp,
-    open,
-    high,
-    low,
-    close,
-    volume_in,
-    trade_count
-FROM candles
-WHERE pool_address = '0xPoolAddress'
-  AND interval_seconds = 3600
-ORDER BY timestamp DESC
-LIMIT 24;
-```
-
-### Top Pools by Volume
-
-```sql
--- PostgreSQL
-SELECT
-    pool_address,
-    swap_count,
-    total_volume,
-    TO_TIMESTAMP(last_swap_time) AS last_active
-FROM pool_stats
-ORDER BY total_volume DESC
-LIMIT 20;
-
--- ClickHouse
-SELECT * FROM v_top_pools;
-```
-
-### Whale Activity (Large Trades)
-
-```sql
-SELECT
-    tx_hash,
-    pool_address,
-    sender,
-    amount0_in,
-    amount1_in,
-    amount0_out,
-    amount1_out,
-    TO_TIMESTAMP(timestamp) as swap_time
-FROM aerodrome_swaps
-WHERE CAST(amount0_in AS NUMERIC) + CAST(amount1_in AS NUMERIC) > 1000000000000
-ORDER BY timestamp DESC
-LIMIT 100;
-```
-
-### Trader Analysis
-
-```sql
-SELECT
-    wallet_address,
-    total_swaps,
-    total_volume,
-    TO_TIMESTAMP(last_swap_time) as last_active
-FROM trader_stats
-WHERE total_swaps > 10
-ORDER BY total_volume DESC
-LIMIT 50;
-```
+`token0_decimals` / `token1_decimals` are `-1` when the metadata call failed, so a missing
+value is never mistaken for 0 decimals. Price views return `NULL` rather than a wrong number
+in that case.
 
 ## Development
 
-### Prerequisites
-
-- Rust 1.70+
-- Substreams CLI 1.7.0+
-- `buf` CLI (for protobuf generation)
-
-### Build
-
 ```bash
-# Clone repository
-git clone https://github.com/PaulieB14/Aerodrome-Substreams.git
-cd Aerodrome-Substreams
-
-# Generate protobuf and ABI code
-buf generate proto
-cargo build
-
-# Build WASM
-substreams build
-
-# Run tests
-cargo test
-
-# Run with GUI
-substreams gui substreams.yaml map_swaps \
-  -e base.substreams.pinax.network:443 \
-  -s 10000000 -t +100
+cargo test          # unit tests
+substreams build    # protobuf + ABI codegen + wasm
+substreams pack     # .spkg
 ```
 
-### Project Structure
+Event decoders are generated from `abi/*.json` by `build.rs` using `substreams-ethereum`'s
+Abigen, so a topic0 cannot drift from the deployed contract the way a hand-written matcher can.
 
 ```
-Aerodrome-Substreams/
-├── src/
-│   ├── lib.rs              # Module exports and map handlers
-│   ├── stores.rs           # Persistent store handlers
-│   ├── abi/                # Generated ABI code
-│   │   └── pool.rs         # Pool contract events
-│   └── pb/                 # Generated protobuf
-│       └── aerodrome.rs    # Proto types
-├── proto/
-│   └── aerodrome.proto     # Data type definitions
-├── abi/
-│   └── pool.json           # Pool ABI (Swap, Mint, Burn, Sync)
-├── schema.sql              # PostgreSQL schema
-├── schema.clickhouse.sql   # ClickHouse schema
-├── substreams.yaml         # Manifest
-├── buf.gen.yaml            # Protobuf generation config
-├── build.rs                # ABI code generation
-└── Cargo.toml              # Dependencies
+abi/
+  pool.json          Aerodrome v2 Pool
+  pool_factory.json  Aerodrome v2 PoolFactory
+  cl_pool.json       Slipstream CLPool
+  cl_factory.json    Slipstream CLFactory
+  b20.json           Base B20 token
+  b20_factory.json   IB20Factory precompile
+  erc20.json         decimals() / symbol()
 ```
 
-## What's New in v0.2.0
-
-### OHLCV Candles
-- Real-time candlestick data for all pools
-- Multiple intervals: 5min, 1hr, 4hr, 1day
-- Delta updates: `set_if_null(open)`, `set(close)`, `max(high)`, `min(low)`, `add(volume)`
-
-### SQL Sink Support
-- PostgreSQL schema with views and utility functions
-- ClickHouse schema with materialized views for real-time aggregation
-
-### Enhanced Event Parsing
-- Swap events with full amount tracking
-- Mint/Burn events for LP monitoring
-- Sync events for reserve tracking
-
-### Persistent Stores
-- `store_swap_volumes` - Cumulative volumes by pool and date
-- `store_unique_traders` - First-seen tracking for wallets
-- `store_pool_stats` - Trade counts per pool
-
-### ClickHouse Optimizations
-- Materialized views for real-time candle aggregation
-- `AggregatingMergeTree` for efficient state management
-- Pre-computed views for common queries
-
-## Resources
-
-- [Substreams Documentation](https://docs.substreams.dev/)
-- [SQL Sink Guide](https://docs.substreams.dev/documentation/consume/sql)
-- [Delta Updates Demo](https://github.com/streamingfast/substreams-eth-uni-v4-demo-candles)
-- [Aerodrome Finance](https://aerodrome.finance/)
-- [Base Documentation](https://docs.base.org/)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/awesome`)
-3. Run tests (`cargo test`)
-4. Commit changes (`git commit -m 'Add awesome feature'`)
-5. Push to branch (`git push origin feature/awesome`)
-6. Open a Pull Request
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-**Built with Substreams for the Aerodrome Finance and Base ecosystem**
+ABIs were taken from the official sources — [`aerodrome-finance/contracts`](https://github.com/aerodrome-finance/contracts),
+[`aerodrome-finance/slipstream`](https://github.com/aerodrome-finance/slipstream) and
+[`base/base-std`](https://github.com/base/base-std) — and every topic0 was confirmed against
+live Base logs.

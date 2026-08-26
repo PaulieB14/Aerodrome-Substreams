@@ -2,14 +2,59 @@ syntax = "proto3";
 
 package aerodrome;
 
-// Swap event collection
+// ---------------------------------------------------------------------------
+// Pool registry
+//
+// Every Aerodrome pool is discovered from its factory's PoolCreated event, so
+// new pools -- including pools for tokenized stocks that have not launched yet --
+// are picked up with no code change and no redeploy.
+// ---------------------------------------------------------------------------
+
+// A pool discovered from a factory PoolCreated event.
+message Pool {
+  string address = 1;
+  string token0 = 2;
+  string token1 = 3;
+  // "cl" (Slipstream concentrated liquidity), "v2_stable" or "v2_volatile".
+  string pool_type = 4;
+  // Slipstream tick spacing; 0 for v2 pools.
+  int32 tick_spacing = 5;
+  string factory = 6;
+  // True when either side is a Base B20 token.
+  bool is_b20 = 7;
+  // The B20 side of the pair; empty when is_b20 is false.
+  string b20_token = 8;
+  uint64 created_block = 9;
+  uint64 created_timestamp = 10;
+  string created_tx = 11;
+  // Resolved once at pool creation via eth_call; -1 when the call failed or the
+  // provider has no RPC, so a missing value is never mistaken for 0 decimals.
+  int32 token0_decimals = 12;
+  int32 token1_decimals = 13;
+  string token0_symbol = 14;
+  string token1_symbol = 15;
+  // "asset", "stablecoin" or "unknown"; empty when the pool holds no B20.
+  // Coinbase tokenized stocks are the "asset" variant.
+  string b20_variant = 16;
+}
+
+message Pools {
+  repeated Pool pools = 1;
+  uint32 count = 2;
+  uint32 b20_count = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Aerodrome v2 (volatile / stable AMM)
+// ---------------------------------------------------------------------------
+
 message SwapEvents {
   repeated AerodromeSwap swaps = 1;
   uint32 swap_count = 2;
   uint64 total_volume = 3;
+  uint32 b20_swap_count = 4;
 }
 
-// Individual Aerodrome Swap event
 message AerodromeSwap {
   uint64 block_number = 1;
   string transaction_hash = 2;
@@ -22,15 +67,19 @@ message AerodromeSwap {
   string amount0_out = 9;
   string amount1_out = 10;
   uint64 timestamp = 11;
+  // Enrichment resolved from the pool registry.
+  string token0 = 12;
+  string token1 = 13;
+  bool is_b20 = 14;
+  string b20_token = 15;
+  string pool_type = 16;
 }
 
-// Liquidity event collection (Mint/Burn)
 message LiquidityEvents {
   repeated AerodromeLiquidity events = 1;
   uint32 event_count = 2;
 }
 
-// Individual Aerodrome Liquidity event (Mint or Burn)
 message AerodromeLiquidity {
   uint64 block_number = 1;
   string transaction_hash = 2;
@@ -42,42 +91,156 @@ message AerodromeLiquidity {
   string amount1 = 8;
   string action = 9; // "mint" or "burn"
   uint64 timestamp = 10;
+  string token0 = 11;
+  string token1 = 12;
+  bool is_b20 = 13;
+  string b20_token = 14;
 }
 
-// Sync event collection (reserve updates)
 message SyncEvents {
   repeated SyncEvent events = 1;
   uint32 event_count = 2;
 }
 
-// Individual Sync event
 message SyncEvent {
   uint64 block_number = 1;
   string pool_address = 2;
   string reserve0 = 3;
   string reserve1 = 4;
   uint64 timestamp = 5;
+  string token0 = 6;
+  string token1 = 7;
+  bool is_b20 = 8;
 }
 
-// Aerodrome Governance event
-message AerodromeGovernance {
+// ---------------------------------------------------------------------------
+// Slipstream concentrated liquidity -- where tokenized stocks actually trade
+// ---------------------------------------------------------------------------
+
+message ClSwaps {
+  repeated ClSwap swaps = 1;
+  uint32 count = 2;
+  uint32 b20_count = 3;
+}
+
+message ClSwap {
   uint64 block_number = 1;
   string transaction_hash = 2;
   uint64 log_index = 3;
-  string voter = 4;
-  string delegate = 5;
-  string amount = 6;
-  uint64 timestamp = 7;
-  string action = 8; // "vote" or "delegate"
+  string pool_address = 4;
+  string sender = 5;
+  string recipient = 6;
+  // Signed pool deltas: negative means the pool paid that token out.
+  string amount0 = 7;
+  string amount1 = 8;
+  string sqrt_price_x96 = 9;
+  string liquidity = 10;
+  int32 tick = 11;
+  uint64 timestamp = 12;
+  string token0 = 13;
+  string token1 = 14;
+  int32 tick_spacing = 15;
+  bool is_b20 = 16;
+  string b20_token = 17;
 }
 
-// Aerodrome Reward event
-message AerodromeReward {
+message ClLiquidityEvents {
+  repeated ClLiquidity events = 1;
+  uint32 count = 2;
+}
+
+message ClLiquidity {
   uint64 block_number = 1;
   string transaction_hash = 2;
   uint64 log_index = 3;
-  string user = 4;
-  string token = 5;
-  string amount = 6;
+  string pool_address = 4;
+  string action = 5; // "mint", "burn" or "collect"
+  string owner = 6;
+  string sender = 7;    // mint only
+  string recipient = 8; // collect only
+  int32 tick_lower = 9;
+  int32 tick_upper = 10;
+  string amount = 11; // liquidity delta, empty for collect
+  string amount0 = 12;
+  string amount1 = 13;
+  uint64 timestamp = 14;
+  string token0 = 15;
+  string token1 = 16;
+  bool is_b20 = 17;
+  string b20_token = 18;
+}
+
+// ---------------------------------------------------------------------------
+// Base B20 token events
+//
+// Coinbase tokenized stocks are B20 `Asset` tokens. Their metadata is mutable
+// (AAPLc was renamed from `AAPL` after launch) and corporate actions are carried
+// by a multiplier rather than by rebasing balances, so the token's own events
+// have to be indexed for pool data to stay interpretable.
+//
+// Spec: https://github.com/base/base-std/tree/main/docs/B20
+// ---------------------------------------------------------------------------
+
+message B20Events {
+  repeated B20Event events = 1;
+  uint32 count = 2;
+  repeated B20MultiplierChange multiplier_changes = 3;
+}
+
+// One B20 log, flattened. Only the fields meaningful for `event_type` are set.
+message B20Event {
+  uint64 block_number = 1;
+  string transaction_hash = 2;
+  uint64 log_index = 3;
+  string token = 4;
+  // "asset", "stablecoin" or "unknown", recovered from the address.
+  string variant = 5;
+  string event_type = 6;
   uint64 timestamp = 7;
+  // Caller / updater / role granter.
+  string actor = 8;
+  // Account the event acts on: role holder, seized-from, burned-from.
+  string account = 9;
+  string recipient = 10;
+  string amount = 11;
+  string old_value = 12;
+  string new_value = 13;
+  // Activation time of a scheduled multiplier; 0 when not applicable. May be in
+  // the future -- the flip is lazy and emits nothing when it happens.
+  uint64 effective_at = 14;
+  // Role hash, policy scope or metadata key.
+  string key = 15;
+  // New name, new symbol, metadata value or memo payload.
+  string text = 16;
+  string announcement_id = 17;
+  string uri = 18;
+  // False means the operation ran outside an announcement bracket, which the
+  // spec says indexers should surface as an emergency override.
+  bool in_announcement = 19;
+  // Comma-separated PausableFeature names for pause / unpause.
+  string pause_features = 20;
+}
+
+// A multiplier change, which is how splits and reinvested dividends are applied.
+//
+// The multiplier only rescales the *displayed* balance: `balanceOf`, `transfer`
+// and `totalSupply` stay raw, so pool reserves and raw pool prices are unaffected
+// by an update. Share-denominated prices are the raw price divided by the
+// multiplier in force at that timestamp, which is what this timeline provides.
+message B20MultiplierChange {
+  string token = 1;
+  string old_multiplier = 2;
+  string new_multiplier = 3;
+  // When the new multiplier takes effect. For an instant update this equals the
+  // block timestamp; for a scheduled one it is a future timestamp.
+  uint64 effective_at = 4;
+  uint64 announced_block = 5;
+  uint64 announced_timestamp = 6;
+  string transaction_hash = 7;
+  uint64 log_index = 8;
+  // False for the deprecated instant setter, used as an emergency override.
+  bool scheduled = 9;
+  // True when this row cancels a previously scheduled change.
+  bool cancelled = 10;
+  string announcement_id = 11;
 }

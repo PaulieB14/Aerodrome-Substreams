@@ -15,6 +15,7 @@ crate-type = ["cdylib"]
 # Substreams core
 substreams = "0.6.0"
 substreams-ethereum = "0.10.6"
+ethabi = "17.2"
 
 # Database sink support
 substreams-database-change = "2.0"
@@ -31,6 +32,7 @@ num-bigint = "0.4"
 
 [build-dependencies]
 substreams-ethereum = "0.10.6"
+anyhow = "1.0"
 
 [profile.release]
 lto = true
