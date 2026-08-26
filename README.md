@@ -109,14 +109,25 @@ sf.ethereum.type.v2.Block
 └─► db_out ────────► DatabaseChanges     PostgreSQL / ClickHouse
 ```
 
-The registry join is not just enrichment for Slipstream. Its `Swap` topic is **byte-identical
-to Uniswap V3's** and to every V3 fork on Base, so membership in the factory-built registry is
-the only thing that identifies a log as Aerodrome's. A swap from an unknown pool is skipped
-rather than emitted unenriched.
+### Why every handler gates on the registry
 
-For v2 the asymmetry is deliberate: Aerodrome reorders Uniswap V2's `Swap` parameters, so that
-topic **is** effectively unique to Aerodrome on Base (45 of 45 sampled emitters returned `true`
-from `PoolFactory.isPool()`), and v2 swaps are emitted whether or not the pool is known.
+Aerodrome inherits event signatures from the protocols it descends from, so **a topic match
+alone does not mean the log came from an Aerodrome pool**:
+
+| Event | Collides with | Measured |
+|---|---|---|
+| Slipstream `Swap` | Uniswap V3 and every V3 fork | byte-identical signature |
+| v2 `Mint(address,uint256,uint256)` | Uniswap V2 and every V2 fork | only **8 of 20** sampled Base emitters were Aerodrome pools |
+| v2 `Burn` | Uniswap V2 forks | contaminated in sampling |
+| v2 `Swap` | — | reordered params; effectively unique on Base |
+
+Membership in the factory-built registry is what actually identifies a pool, so every handler
+skips logs from pools it does not know. An ungated `Mint` handler would attribute the majority
+of its rows to contracts that are not Aerodrome at all.
+
+The registry starts at the v2 `PoolFactory` deployment, so it is complete. **Raising
+`initialBlock` above that trades completeness for backfill speed** — pools created before the
+new start are unknown, and their events are skipped.
 
 ## Contract addresses (Base)
 

@@ -7,8 +7,26 @@
 //!   which is where Coinbase B20 tokenized stocks trade
 //!
 //! Pools are discovered from factory `PoolCreated` events rather than from a
-//! hardcoded list, and any pool with a B20 token on one side is flagged as a
-//! tokenized-stock market. New tickers are picked up automatically.
+//! hardcoded list, and any pool with a B20 token on one side is flagged. New
+//! tickers are picked up automatically.
+//!
+//! # Why every handler gates on the pool registry
+//!
+//! Aerodrome shares event signatures with the protocols it descends from, so a
+//! topic match alone does not mean the log came from an Aerodrome pool:
+//!
+//! * Slipstream's `Swap` is byte-identical to Uniswap V3's, and so is every V3
+//!   fork on Base.
+//! * v2's `Mint(address,uint256,uint256)` is byte-identical to Uniswap V2's.
+//!   Sampling Base for that topic, only 8 of 20 emitters were Aerodrome pools --
+//!   an ungated handler misattributes the rest.
+//! * v2's `Burn` collides in the same way.
+//!
+//! Membership in the factory-built registry is what actually identifies a pool,
+//! so a log from an unknown pool is dropped rather than emitted unenriched. The
+//! registry starts at the v2 `PoolFactory` deployment and is therefore complete.
+//! Raising `initialBlock` above that trades completeness for backfill speed:
+//! pools created before the new start are unknown, and their events are skipped.
 
 mod abi;
 pub mod b20;
@@ -77,11 +95,11 @@ fn v2_price_token1_per_token0(swap: &AerodromeSwap) -> String {
 // Aerodrome v2
 // ---------------------------------------------------------------------------
 
-/// Extracts v2 swaps, enriched with pool metadata and the tokenized-stock flag.
+/// Extracts v2 swaps, enriched from the pool registry.
 ///
-/// v2 swaps are emitted whether or not the pool is in the registry: Aerodrome's
-/// `Swap` signature reorders Uniswap V2's parameters, so its topic is effectively
-/// unique to Aerodrome pools on Base.
+/// Like every other handler here, a log from a pool that is not in the registry
+/// is skipped. See the module docs for why that gate is load-bearing rather than
+/// merely tidy.
 #[substreams::handlers::map]
 pub fn map_swaps(
     blk: eth::Block,
@@ -99,7 +117,9 @@ pub fn map_swaps(
             };
 
             let pool_address = Hex(&log.address).to_string();
-            let pool = lookup_pool(&pool_store, &pool_address);
+            let Some(pool) = lookup_pool(&pool_store, &pool_address) else {
+                continue; // not an Aerodrome pool
+            };
 
             swaps.push(AerodromeSwap {
                 block_number: blk.number,
@@ -113,14 +133,11 @@ pub fn map_swaps(
                 amount0_out: swap.amount0_out.to_string(),
                 amount1_out: swap.amount1_out.to_string(),
                 timestamp,
-                token0: pool.as_ref().map(|p| p.token0.clone()).unwrap_or_default(),
-                token1: pool.as_ref().map(|p| p.token1.clone()).unwrap_or_default(),
-                is_b20: pool.as_ref().map(|p| p.is_b20).unwrap_or(false),
-                b20_token: pool
-                    .as_ref()
-                    .map(|p| p.b20_token.clone())
-                    .unwrap_or_default(),
-                pool_type: pool.as_ref().map(|p| p.pool_type.clone()).unwrap_or_default(),
+                token0: pool.token0,
+                token1: pool.token1,
+                is_b20: pool.is_b20,
+                b20_token: pool.b20_token,
+                pool_type: pool.pool_type,
             });
         }
     }
@@ -160,7 +177,9 @@ pub fn map_liquidity(
 
             // Aerodrome's Mint carries no recipient; the sender is the LP.
             if let Some(mint) = Mint::match_and_decode(log) {
-                let pool = lookup_pool(&pool_store, &pool_address);
+                let Some(pool) = lookup_pool(&pool_store, &pool_address) else {
+                    continue;
+                };
                 events.push(AerodromeLiquidity {
                     block_number: blk.number,
                     transaction_hash: tx_hash.clone(),
@@ -172,19 +191,18 @@ pub fn map_liquidity(
                     amount1: mint.amount1.to_string(),
                     action: "mint".to_string(),
                     timestamp,
-                    token0: pool.as_ref().map(|p| p.token0.clone()).unwrap_or_default(),
-                    token1: pool.as_ref().map(|p| p.token1.clone()).unwrap_or_default(),
-                    is_b20: pool.as_ref().map(|p| p.is_b20).unwrap_or(false),
-                    b20_token: pool
-                        .as_ref()
-                        .map(|p| p.b20_token.clone())
-                        .unwrap_or_default(),
+                    token0: pool.token0,
+                    token1: pool.token1,
+                    is_b20: pool.is_b20,
+                    b20_token: pool.b20_token,
                 });
                 continue;
             }
 
             if let Some(burn) = Burn::match_and_decode(log) {
-                let pool = lookup_pool(&pool_store, &pool_address);
+                let Some(pool) = lookup_pool(&pool_store, &pool_address) else {
+                    continue;
+                };
                 events.push(AerodromeLiquidity {
                     block_number: blk.number,
                     transaction_hash: tx_hash.clone(),
@@ -196,13 +214,10 @@ pub fn map_liquidity(
                     amount1: burn.amount1.to_string(),
                     action: "burn".to_string(),
                     timestamp,
-                    token0: pool.as_ref().map(|p| p.token0.clone()).unwrap_or_default(),
-                    token1: pool.as_ref().map(|p| p.token1.clone()).unwrap_or_default(),
-                    is_b20: pool.as_ref().map(|p| p.is_b20).unwrap_or(false),
-                    b20_token: pool
-                        .as_ref()
-                        .map(|p| p.b20_token.clone())
-                        .unwrap_or_default(),
+                    token0: pool.token0,
+                    token1: pool.token1,
+                    is_b20: pool.is_b20,
+                    b20_token: pool.b20_token,
                 });
             }
         }
@@ -231,7 +246,9 @@ pub fn map_syncs(
             };
 
             let pool_address = Hex(&log.address).to_string();
-            let pool = lookup_pool(&pool_store, &pool_address);
+            let Some(pool) = lookup_pool(&pool_store, &pool_address) else {
+                continue; // not an Aerodrome pool
+            };
 
             syncs.push(SyncEvent {
                 block_number: blk.number,
@@ -239,9 +256,9 @@ pub fn map_syncs(
                 reserve0: sync.reserve0.to_string(),
                 reserve1: sync.reserve1.to_string(),
                 timestamp,
-                token0: pool.as_ref().map(|p| p.token0.clone()).unwrap_or_default(),
-                token1: pool.as_ref().map(|p| p.token1.clone()).unwrap_or_default(),
-                is_b20: pool.as_ref().map(|p| p.is_b20).unwrap_or(false),
+                token0: pool.token0,
+                token1: pool.token1,
+                is_b20: pool.is_b20,
             });
         }
     }
