@@ -1,7 +1,7 @@
 specVersion: v0.1.0
 package:
   name: "aerodrome_substreams"
-  version: v0.3.0
+  version: v0.3.1
   description: |
     Substreams for Aerodrome Finance on Base, covering both the v2 AMM and
     Slipstream concentrated liquidity -- including Coinbase B20 tokenized-stock
@@ -31,15 +31,36 @@ binaries:
 network: base
 
 modules:
+  # --- Factory discovery ----------------------------------------------------
+  # Aerodrome's FactoryRegistry is the protocol's own list of real pool
+  # factories. Watching it means a factory approved after this package was built
+  # still gets its pools indexed.
+  - name: map_factories
+    kind: map
+    initialBlock: 3200559
+    inputs:
+      - source: sf.ethereum.type.v2.Block
+    output:
+      type: proto:aerodrome.Factories
+
+  - name: store_factories
+    kind: store
+    updatePolicy: set
+    valueType: int64
+    initialBlock: 3200559
+    inputs:
+      - map: map_factories
+
   # --- Pool discovery -------------------------------------------------------
-  # Decodes PoolCreated from the Aerodrome v2 PoolFactory and both Slipstream
-  # CLFactories. initialBlock is the v2 PoolFactory deployment, the earliest
-  # block at which any Aerodrome pool can exist.
+  # Decodes PoolCreated from every approved factory. initialBlock is the v2
+  # PoolFactory deployment, the earliest block at which any Aerodrome pool can
+  # exist.
   - name: map_pools
     kind: map
     initialBlock: 3200559
     inputs:
       - source: sf.ethereum.type.v2.Block
+      - store: store_factories
     output:
       type: proto:aerodrome.Pools
 

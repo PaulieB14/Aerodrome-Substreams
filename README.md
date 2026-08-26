@@ -1,6 +1,6 @@
 # Aerodrome Finance Substreams
 
-[![Substreams](https://img.shields.io/badge/Substreams-v0.3.0-blue)](https://substreams.dev)
+[![Substreams](https://img.shields.io/badge/Substreams-v0.3.1-blue)](https://substreams.dev)
 [![Base](https://img.shields.io/badge/Network-Base-blue)](https://base.org)
 [![Aerodrome](https://img.shields.io/badge/DEX-Aerodrome-purple)](https://aerodrome.finance)
 [![SQL Sink](https://img.shields.io/badge/Sink-PostgreSQL%20%7C%20ClickHouse-green)](https://docs.substreams.dev)
@@ -17,9 +17,10 @@ Substreams for Aerodrome Finance on Base, covering **both** Aerodrome venues and
 ## Tokenized stocks
 
 Coinbase's tokenized stocks are [B20](https://github.com/base/base-std/tree/main/docs/B20)
-tokens, and on Aerodrome they trade **exclusively in Slipstream concentrated-liquidity
-pools**. Slipstream inherits Uniswap V3's event ABI, which is a different `Swap` signature
-from the v2 AMM:
+tokens. On Aerodrome the deep markets are **Slipstream concentrated-liquidity pools**, but
+they trade on **both** venues — `GOOGLc/AERO` and `NVDAc/USDC` are live v2 AMM pools — so
+both rails are indexed. Slipstream inherits Uniswap V3's event ABI, a different `Swap`
+signature from the v2 AMM:
 
 | Venue | `Swap` signature | topic0 |
 |---|---|---|
@@ -142,14 +143,21 @@ Every address below was verified by calling it on Base.
 | Contract | Address | Deployed |
 |---|---|---|
 | v2 `PoolFactory` | `0x420DD381b31aEf6683db6B902084cB0FFECe40Da` | block 3,200,559 |
-| Slipstream `CLFactory` v1 | `0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A` | block 13,843,704 |
-| Slipstream `CLFactory` v2 | `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef` | block 44,394,724 |
+| Slipstream `CLFactory` | `0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A` | block 13,843,704 |
+| Slipstream `CLFactory` | `0xaDe65c38CD4849aDBA595a4323a8C7DdfE89716a` | block 36,953,918 |
+| Slipstream `CLFactory` | `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef` | block 44,394,724 |
+| `FactoryRegistry` | `0x5C3F18F06CC09CA1910767A34a20F771039E37C0` | block 3,200,576 |
 | `Voter` | `0x16613524e02ad97eDfeF371bC883F2F5d6C480A5` | |
 | `AERO` | `0x940181a94A35A4569E4529A3CDfB74e38FD98631` | block 3,200,550 |
 | `IB20Factory` precompile | `0xB20f000000000000000000000000000000000000` | |
 
-Both CL factories are live and share the same `Voter`. Every tokenized-stock pool at launch
-was created by **CLFactory v2**, so a listener watching only v1 sees none of them.
+Those four pool factories are exactly what `FactoryRegistry.poolFactories()` returns — the
+protocol's own list. **Hardcoding a subset is the trap here**: the newest CLFactory alone holds
+2,184 pools, and every tokenized-stock CL pool at launch was created by `0xf8f2eB49…`, so a
+listener watching one factory sees a fraction of Aerodrome.
+
+`map_factories` watches the registry's `Approve` / `Unapprove` events, so a factory approved
+after this package was built registers itself and its pools index with no code change.
 
 ## Quick start
 
@@ -178,13 +186,13 @@ roughly 10× shorter.
 
 ```bash
 substreams-sink-sql setup "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.3.0.spkg
+  aerodrome-substreams-v0.3.1.spkg
 substreams-sink-sql run   "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.3.0.spkg
+  aerodrome-substreams-v0.3.1.spkg
 
 # ClickHouse
 substreams-sink-sql setup "clickhouse://default:@localhost:9000/default" \
-  aerodrome-substreams-v0.3.0.spkg --engine=clickhouse
+  aerodrome-substreams-v0.3.1.spkg --engine=clickhouse
 ```
 
 ### Tables

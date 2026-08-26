@@ -299,6 +299,10 @@ JOIN pools p ON p.address = s.pool_address;
 
 -- Tokenized-stock trades, priced in the quote asset.
 --
+-- Covers BOTH venues. Tokenized stocks are mostly Slipstream, but real v2 AMM
+-- pools hold them too (GOOGLc/AERO and NVDAc/USDC are live v2 pools), and a
+-- CL-only view would silently drop those trades.
+--
 -- `price_raw` is the price of one whole B20 unit. `price_per_share` divides by
 -- the multiplier in force, so a stock split shows up as a change in shares per
 -- token rather than as a phantom gap in the price series. The multiplier is
@@ -313,6 +317,7 @@ SELECT
     s.pool_address,
     s.sender,
     s.recipient,
+    'cl'::VARCHAR AS venue,
     bp.b20_token,
     bp.b20_symbol,
     bp.quote_symbol,
@@ -327,7 +332,46 @@ SELECT
         WHEN s.price_token1_per_token0 > 0 THEN 1 / s.price_token1_per_token0
     END / (b20_effective_multiplier(bp.b20_token, s.timestamp) / 1e18) AS price_per_share
 FROM cl_swaps_priced s
-JOIN stock_pools bp ON bp.address = s.pool_address;
+JOIN stock_pools bp ON bp.address = s.pool_address
+
+UNION ALL
+
+SELECT
+    v.id,
+    v.tx_hash,
+    v.block_number,
+    v.timestamp,
+    v.pool_address,
+    v.sender,
+    v.recipient,
+    'v2'::VARCHAR AS venue,
+    bp.b20_token,
+    bp.b20_symbol,
+    bp.quote_symbol,
+    CASE WHEN bp.b20_token = v.token0
+         THEN v.amount0_in - v.amount0_out
+         ELSE v.amount1_in - v.amount1_out END AS b20_amount,
+    CASE WHEN bp.b20_token = v.token0
+         THEN v.amount1_in - v.amount1_out
+         ELSE v.amount0_in - v.amount0_out END AS quote_amount,
+    -- v2 stores a raw token1-per-token0 ratio; apply decimals and orient it.
+    CASE
+        WHEN bp.quote_decimals < 0 OR bp.b20_decimals < 0 THEN NULL
+        WHEN bp.b20_token = v.token0
+            THEN v.price_token1_per_token0 * power(10::NUMERIC, bp.b20_decimals - bp.quote_decimals)
+        WHEN v.price_token1_per_token0 > 0
+            THEN power(10::NUMERIC, bp.b20_decimals - bp.quote_decimals) / v.price_token1_per_token0
+    END AS price_raw,
+    CASE
+        WHEN bp.quote_decimals < 0 OR bp.b20_decimals < 0 THEN NULL
+        WHEN bp.b20_token = v.token0
+            THEN v.price_token1_per_token0 * power(10::NUMERIC, bp.b20_decimals - bp.quote_decimals)
+        WHEN v.price_token1_per_token0 > 0
+            THEN power(10::NUMERIC, bp.b20_decimals - bp.quote_decimals) / v.price_token1_per_token0
+    END / (b20_effective_multiplier(bp.b20_token, v.timestamp) / 1e18) AS price_per_share
+FROM aerodrome_swaps v
+JOIN stock_pools bp ON bp.address = v.pool_address
+WHERE v.price_token1_per_token0 IS NOT NULL;
 
 -- OHLCV for tokenized stocks, derived rather than stored.
 -- Pass 300 / 3600 / 14400 / 86400 for 5m / 1h / 4h / 1d.

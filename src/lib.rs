@@ -36,7 +36,7 @@ mod pools;
 mod stores;
 
 pub use b20_events::map_b20_events;
-pub use pools::map_pools;
+pub use pools::{map_factories, map_pools, store_factories};
 pub use stores::{
     store_cl_volumes, store_pool_stats, store_pools, store_swap_volumes, store_unique_traders,
 };

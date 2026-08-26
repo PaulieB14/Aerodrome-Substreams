@@ -259,7 +259,8 @@ SELECT
     if(bp.b20_token = s.token0,
        s.price_token1_per_token0,
        if(s.price_token1_per_token0 > 0, 1 / s.price_token1_per_token0, NULL)) AS price_raw,
-    price_raw / (if(m.new_multiplier = '', 1e18, toFloat64(m.new_multiplier)) / 1e18) AS price_per_share
+    price_raw / (if(m.new_multiplier = '', 1e18, toFloat64(m.new_multiplier)) / 1e18) AS price_per_share,
+    'cl' AS venue
 FROM cl_swaps_priced AS s
 INNER JOIN stock_pools AS bp ON bp.address = s.pool_address
 -- ASOF resolves the multiplier in force at each swap's own timestamp. A plain
@@ -269,7 +270,43 @@ ASOF LEFT JOIN (
     SELECT token, new_multiplier, effective_at
     FROM b20_multiplier_schedule
     WHERE NOT cancelled
-) AS m ON m.token = bp.b20_token AND m.effective_at <= s.timestamp;
+) AS m ON m.token = bp.b20_token AND m.effective_at <= s.timestamp
+
+UNION ALL
+
+-- v2 AMM leg. Tokenized stocks are mostly Slipstream, but real v2 pools hold
+-- them too (GOOGLc/AERO, NVDAc/USDC), and a CL-only view drops those trades.
+SELECT
+    v.id           AS id,
+    v.tx_hash      AS tx_hash,
+    v.block_number AS block_number,
+    v.timestamp    AS timestamp,
+    v.pool_address AS pool_address,
+    v.sender       AS sender,
+    bp.b20_token   AS b20_token,
+    bp.b20_symbol  AS b20_symbol,
+    bp.quote_symbol AS quote_symbol,
+    if(bp.b20_token = v.token0,
+       toInt256(v.amount0_in) - toInt256(v.amount0_out),
+       toInt256(v.amount1_in) - toInt256(v.amount1_out)) AS b20_amount,
+    if(bp.b20_token = v.token0,
+       toInt256(v.amount1_in) - toInt256(v.amount1_out),
+       toInt256(v.amount0_in) - toInt256(v.amount0_out)) AS quote_amount,
+    if(bp.quote_decimals < 0 OR bp.b20_decimals < 0, NULL,
+       if(bp.b20_token = v.token0,
+          toFloat64(v.price_token1_per_token0) * pow(10, bp.b20_decimals - bp.quote_decimals),
+          pow(10, bp.b20_decimals - bp.quote_decimals) / toFloat64(v.price_token1_per_token0)
+    )) AS price_raw,
+    price_raw / (if(m2.new_multiplier = '', 1e18, toFloat64(m2.new_multiplier)) / 1e18) AS price_per_share,
+    'v2' AS venue
+FROM aerodrome_swaps AS v
+INNER JOIN stock_pools AS bp ON bp.address = v.pool_address
+ASOF LEFT JOIN (
+    SELECT token, new_multiplier, effective_at
+    FROM b20_multiplier_schedule
+    WHERE NOT cancelled
+) AS m2 ON m2.token = bp.b20_token AND m2.effective_at <= v.timestamp
+WHERE v.price_token1_per_token0 != '';
 
 -- Hourly OHLCV for tokenized stocks.
 CREATE VIEW IF NOT EXISTS stock_candles_1h AS

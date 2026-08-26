@@ -6,9 +6,10 @@
 //! someone opens an Aerodrome pool for it, the pool shows up here on the block
 //! it is created, already flagged as a stock market.
 
-use crate::abi::{cl_factory, erc20, pool_factory};
+use crate::abi::{cl_factory, erc20, factory_registry, pool_factory};
 use crate::b20;
-use crate::pb::aerodrome::{Pool, Pools};
+use crate::pb::aerodrome::{Factories, Factory, Pool, Pools};
+use substreams::store::{StoreGet, StoreGetInt64, StoreNew, StoreSet, StoreSetInt64};
 use substreams::Hex;
 use substreams_ethereum::pb::eth::v2 as eth;
 use substreams_ethereum::rpc::RpcBatch;
@@ -67,17 +68,94 @@ pub const CL_FACTORY_V1: [u8; 20] = [
     0xf4, 0x06, 0x80, 0x9a,
 ];
 
-/// Slipstream `CLFactory` v2 (Base, deployed at block 44,394,724).
-/// Every Coinbase tokenized-stock pool live at launch was created here.
+/// Slipstream `CLFactory` (Base, deployed at block 36,953,918), 2,184 pools.
 pub const CL_FACTORY_V2: [u8; 20] = [
+    0xad, 0xe6, 0x5c, 0x38, 0xcd, 0x48, 0x49, 0xad, 0xba, 0x59, 0x5a, 0x43, 0x23, 0xa8, 0xc7, 0xdd,
+    0xfe, 0x89, 0x71, 0x6a,
+];
+
+/// Slipstream `CLFactory` (Base, deployed at block 44,394,724).
+/// Every Coinbase tokenized-stock CL pool live at launch was created here.
+pub const CL_FACTORY_V3: [u8; 20] = [
     0xf8, 0xf2, 0xeb, 0x49, 0x40, 0xcf, 0xe7, 0xd1, 0x36, 0x03, 0xdd, 0xdd, 0x87, 0xf1, 0x23, 0x82,
     0x0f, 0xc0, 0x61, 0xef,
 ];
 
-const CL_FACTORIES: [[u8; 20]; 2] = [CL_FACTORY_V1, CL_FACTORY_V2];
+/// Aerodrome's `FactoryRegistry` -- the protocol's own list of real factories.
+pub const FACTORY_REGISTRY: [u8; 20] = [
+    0x5c, 0x3f, 0x18, 0xf0, 0x6c, 0xc0, 0x9c, 0xa1, 0x91, 0x07, 0x67, 0xa3, 0x4a, 0x20, 0xf7, 0x71,
+    0x03, 0x9e, 0x37, 0xc0,
+];
 
-fn is_cl_factory(address: &[u8]) -> bool {
-    CL_FACTORIES.iter().any(|f| f == address)
+/// The four factories `FactoryRegistry.poolFactories()` reported at build time.
+///
+/// Seeded so history indexes correctly without replaying the registry's own
+/// approvals, which predate the pools they authorise. `map_factories` keeps the
+/// set current from there.
+const SEED_FACTORIES: [[u8; 20]; 4] =
+    [V2_POOL_FACTORY, CL_FACTORY_V1, CL_FACTORY_V2, CL_FACTORY_V3];
+
+fn factory_key(address: &[u8]) -> String {
+    format!("factory:{}", Hex(address))
+}
+
+/// Tracks factories approved and removed in Aerodrome's `FactoryRegistry`.
+#[substreams::handlers::map]
+pub fn map_factories(blk: eth::Block) -> Result<Factories, substreams::errors::Error> {
+    let mut factories: Vec<Factory> = Vec::new();
+
+    for receipt in blk.receipts() {
+        let tx_hash = Hex(&receipt.transaction.hash).to_string();
+
+        for log in &receipt.receipt.logs {
+            if log.address != FACTORY_REGISTRY {
+                continue;
+            }
+
+            if let Some(ev) = factory_registry::events::Approve::match_and_decode(log) {
+                substreams::log::info!("factory approved: {}", Hex(&ev.pool_factory));
+                factories.push(Factory {
+                    address: Hex(&ev.pool_factory).to_string(),
+                    approved: true,
+                    block_number: blk.number,
+                    transaction_hash: tx_hash.clone(),
+                });
+            } else if let Some(ev) = factory_registry::events::Unapprove::match_and_decode(log) {
+                factories.push(Factory {
+                    address: Hex(&ev.pool_factory).to_string(),
+                    approved: false,
+                    block_number: blk.number,
+                    transaction_hash: tx_hash.clone(),
+                });
+            }
+        }
+    }
+
+    let count = factories.len() as u32;
+    Ok(Factories { factories, count })
+}
+
+/// Stores which pool factories are currently approved. 1 = approved, 0 = removed.
+#[substreams::handlers::store]
+pub fn store_factories(factories: Factories, store: StoreSetInt64) {
+    for factory in factories.factories {
+        store.set(
+            0,
+            factory_key(&hex::decode(&factory.address).unwrap_or_default()),
+            &if factory.approved { 1 } else { 0 },
+        );
+    }
+}
+
+/// True when the emitter is a pool factory this package should trust.
+///
+/// The seed list covers every factory approved at build time; the store covers
+/// anything approved since, so a factory added after release still indexes.
+fn is_known_factory(address: &[u8], store: &StoreGetInt64) -> bool {
+    if SEED_FACTORIES.iter().any(|f| f == address) {
+        return true;
+    }
+    store.get_last(factory_key(address)) == Some(1)
 }
 
 fn build(
@@ -114,9 +192,16 @@ fn build(
     }
 }
 
-/// Decodes `PoolCreated` from the Aerodrome v2 and Slipstream factories.
+/// Decodes `PoolCreated` from every approved Aerodrome pool factory.
+///
+/// The two `PoolCreated` shapes have different topics, so the venue is decided by
+/// which one decodes rather than by which factory emitted it. A newly approved
+/// factory of either kind is therefore handled with no code change.
 #[substreams::handlers::map]
-pub fn map_pools(blk: eth::Block) -> Result<Pools, substreams::errors::Error> {
+pub fn map_pools(
+    blk: eth::Block,
+    factory_store: StoreGetInt64,
+) -> Result<Pools, substreams::errors::Error> {
     let timestamp = blk
         .header
         .as_ref()
@@ -130,17 +215,19 @@ pub fn map_pools(blk: eth::Block) -> Result<Pools, substreams::errors::Error> {
         let tx_hash = Hex(&receipt.transaction.hash).to_string();
 
         for log in &receipt.receipt.logs {
-            // Only the factories emit PoolCreated, so gating on the emitter keeps
-            // pools from unrelated forks that reuse the same event out of the registry.
-            if log.address == V2_POOL_FACTORY {
-                if let Some(ev) = pool_factory::events::PoolCreated::match_and_decode(log) {
-                    let pool_type = if ev.stable { "v2_stable" } else { "v2_volatile" };
-                    pools.push(build(
-                        &ev.pool, &ev.token0, &ev.token1, pool_type, 0, &log.address, &blk,
-                        &tx_hash, timestamp,
-                    ));
-                }
-            } else if is_cl_factory(&log.address) {
+            // Only an approved factory's PoolCreated is trusted, which keeps pools
+            // from unrelated forks that reuse the same event out of the registry.
+            if !is_known_factory(&log.address, &factory_store) {
+                continue;
+            }
+
+            if let Some(ev) = pool_factory::events::PoolCreated::match_and_decode(log) {
+                let pool_type = if ev.stable { "v2_stable" } else { "v2_volatile" };
+                pools.push(build(
+                    &ev.pool, &ev.token0, &ev.token1, pool_type, 0, &log.address, &blk, &tx_hash,
+                    timestamp,
+                ));
+            } else {
                 if let Some(ev) = cl_factory::events::PoolCreated::match_and_decode(log) {
                     let tick_spacing = ev.tick_spacing.to_string().parse::<i32>().unwrap_or(0);
                     pools.push(build(

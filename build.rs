@@ -16,6 +16,7 @@ fn main() -> Result<()> {
         ("Erc20", "abi/erc20.json", "src/abi/erc20.rs"),
         ("B20", "abi/b20.json", "src/abi/b20.rs"),
         ("B20Factory", "abi/b20_factory.json", "src/abi/b20_factory.rs"),
+        ("FactoryRegistry", "abi/factory_registry.json", "src/abi/factory_registry.rs"),
     ] {
         Abigen::new(name, abi)?.generate()?.write_to_file(out)?;
     }

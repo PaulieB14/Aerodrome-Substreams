@@ -63,6 +63,31 @@ pub struct Pools {
     #[prost(uint32, tag="3")]
     pub b20_count: u32,
 }
+/// A pool factory approved (or removed) in Aerodrome's FactoryRegistry.
+///
+/// The registry is the protocol's own list of which factories are real, so
+/// watching it means a factory deployed after this package was built still gets
+/// its pools indexed.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Factory {
+    #[prost(string, tag="1")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(bool, tag="2")]
+    pub approved: bool,
+    #[prost(uint64, tag="3")]
+    pub block_number: u64,
+    #[prost(string, tag="4")]
+    pub transaction_hash: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Factories {
+    #[prost(message, repeated, tag="1")]
+    pub factories: ::prost::alloc::vec::Vec<Factory>,
+    #[prost(uint32, tag="2")]
+    pub count: u32,
+}
 // ---------------------------------------------------------------------------
 // Aerodrome v2 (volatile / stable AMM)
 // ---------------------------------------------------------------------------

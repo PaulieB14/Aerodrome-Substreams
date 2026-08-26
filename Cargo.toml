@@ -1,6 +1,6 @@
 [package]
 name = "aerodrome-substreams"
-version = "0.2.1"
+version = "0.3.1"
 edition = "2021"
 description = "High-performance Substreams for Aerodrome Finance on Base with OHLCV candles, SQL sink support (PostgreSQL/ClickHouse), and delta updates"
 license = "MIT"

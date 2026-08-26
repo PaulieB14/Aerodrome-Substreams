@@ -44,6 +44,23 @@ message Pools {
   uint32 b20_count = 3;
 }
 
+// A pool factory approved (or removed) in Aerodrome's FactoryRegistry.
+//
+// The registry is the protocol's own list of which factories are real, so
+// watching it means a factory deployed after this package was built still gets
+// its pools indexed.
+message Factory {
+  string address = 1;
+  bool approved = 2;
+  uint64 block_number = 3;
+  string transaction_hash = 4;
+}
+
+message Factories {
+  repeated Factory factories = 1;
+  uint32 count = 2;
+}
+
 // ---------------------------------------------------------------------------
 // Aerodrome v2 (volatile / stable AMM)
 // ---------------------------------------------------------------------------

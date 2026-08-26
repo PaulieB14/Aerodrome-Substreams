@@ -1,0 +1,10 @@
+[
+  {"type":"event","name":"Approve","anonymous":false,"inputs":[
+    {"indexed":true,"name":"poolFactory","type":"address"},
+    {"indexed":true,"name":"votingRewardsFactory","type":"address"},
+    {"indexed":true,"name":"gaugeFactory","type":"address"}]},
+  {"type":"event","name":"Unapprove","anonymous":false,"inputs":[
+    {"indexed":true,"name":"poolFactory","type":"address"},
+    {"indexed":true,"name":"votingRewardsFactory","type":"address"},
+    {"indexed":true,"name":"gaugeFactory","type":"address"}]}
+]
