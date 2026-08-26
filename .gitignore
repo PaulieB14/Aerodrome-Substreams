@@ -6,7 +6,7 @@ Cargo.lock
 
 # Build artifacts
 *.spkg
-substreams.test.yaml
+substreams.test*.yaml
 *.so
 *.dylib
 *.dll
