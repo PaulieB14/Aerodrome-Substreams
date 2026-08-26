@@ -256,6 +256,36 @@ RETURNS NUMERIC AS $$
     );
 $$ LANGUAGE SQL STABLE;
 
+-- Latest value of each B20 extra-metadata key. An empty value means the issuer
+-- removed the entry, so those are dropped rather than surfaced as blank.
+CREATE OR REPLACE VIEW b20_token_metadata AS
+SELECT DISTINCT ON (token, key) token, key, text AS value
+FROM b20_events
+WHERE event_type = 'extra_metadata_updated'
+ORDER BY token, key, block_number DESC, log_index DESC;
+
+-- What a B20 token actually is.
+--
+-- The variant byte only says `asset` vs `stablecoin`, and the Asset variant is
+-- explicitly general purpose -- "assets of all kinds" -- so it does NOT mean
+-- equity. An ISIN in extra metadata is the real signal: it is a registered
+-- securities identifier, and every Coinbase tokenized stock carries one
+-- (AAPLc -> US0378331005, NVDAc -> US67066G1040). Tokenized commodities,
+-- points or other non-securities will not have one.
+CREATE OR REPLACE VIEW b20_token_identity AS
+SELECT
+    c.token,
+    c.variant,
+    c.name,
+    c.symbol,
+    i.value AS isin,
+    -- First two ISIN characters are the issuing country.
+    SUBSTR(i.value, 1, 2) AS isin_country,
+    (i.value IS NOT NULL) AS is_security
+FROM b20_token_current c
+LEFT JOIN b20_token_metadata i
+       ON i.token = c.token AND i.key = 'isin' AND i.value <> '';
+
 -- Every Aerodrome pool holding a B20 token, with the B20 side identified.
 CREATE OR REPLACE VIEW b20_pools AS
 SELECT
@@ -269,12 +299,23 @@ FROM pools p
 LEFT JOIN b20_token_current c ON c.token = p.b20_token
 WHERE p.is_b20;
 
--- Tokenized-stock pools: the B20 `asset` variant.
---
--- `createB20` is permissionless, so B20-ness alone does not prove who issued a
--- token. Confirm the issuer before presenting a pool as a given company's stock.
-CREATE OR REPLACE VIEW stock_pools AS
+-- Asset-variant B20 pools: tokenized anything (equities, commodities, funds).
+CREATE OR REPLACE VIEW b20_asset_pools AS
 SELECT * FROM b20_pools WHERE b20_variant = 'asset';
+
+-- Tokenized-SECURITY pools: asset variant AND a registered ISIN.
+--
+-- Narrower than b20_asset_pools on purpose. Note `createB20` is permissionless,
+-- so even an ISIN is self-declared metadata, not proof of issuance -- confirm
+-- the issuer before presenting a pool as a given company's stock.
+--
+-- Requires the token's ExtraMetadataUpdated to have been indexed, which it is
+-- on any run starting before the token was created.
+CREATE OR REPLACE VIEW stock_pools AS
+SELECT bp.*, id.isin, id.isin_country, id.symbol AS security_symbol
+FROM b20_pools bp
+JOIN b20_token_identity id ON id.token = bp.b20_token
+WHERE bp.b20_variant = 'asset' AND id.isin IS NOT NULL;
 
 -- Slipstream swaps with a real price attached.
 --
@@ -308,7 +349,7 @@ JOIN pools p ON p.address = s.pool_address;
 -- token rather than as a phantom gap in the price series. The multiplier is
 -- cosmetic to the AMM -- pool reserves are raw -- so `price_raw` stays
 -- continuous across a corporate action by construction.
-CREATE OR REPLACE VIEW stock_swaps AS
+CREATE OR REPLACE VIEW b20_swaps AS
 SELECT
     s.id,
     s.tx_hash,
@@ -332,7 +373,7 @@ SELECT
         WHEN s.price_token1_per_token0 > 0 THEN 1 / s.price_token1_per_token0
     END / (b20_effective_multiplier(bp.b20_token, s.timestamp) / 1e18) AS price_per_share
 FROM cl_swaps_priced s
-JOIN stock_pools bp ON bp.address = s.pool_address
+JOIN b20_pools bp ON bp.address = s.pool_address
 
 UNION ALL
 
@@ -370,8 +411,15 @@ SELECT
             THEN power(10::NUMERIC, bp.b20_decimals - bp.quote_decimals) / v.price_token1_per_token0
     END / (b20_effective_multiplier(bp.b20_token, v.timestamp) / 1e18) AS price_per_share
 FROM aerodrome_swaps v
-JOIN stock_pools bp ON bp.address = v.pool_address
+JOIN b20_pools bp ON bp.address = v.pool_address
 WHERE v.price_token1_per_token0 IS NOT NULL;
+
+-- Trades in tokenized securities only.
+CREATE OR REPLACE VIEW stock_swaps AS
+SELECT b.*, id.isin
+FROM b20_swaps b
+JOIN b20_token_identity id ON id.token = b.b20_token
+WHERE id.isin IS NOT NULL;
 
 -- OHLCV for tokenized stocks, derived rather than stored.
 -- Pass 300 / 3600 / 14400 / 86400 for 5m / 1h / 4h / 1d.

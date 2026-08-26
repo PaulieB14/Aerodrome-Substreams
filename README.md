@@ -1,6 +1,6 @@
 # Aerodrome Finance Substreams
 
-[![Substreams](https://img.shields.io/badge/Substreams-v0.3.1-blue)](https://substreams.dev)
+[![Substreams](https://img.shields.io/badge/Substreams-v0.3.2-blue)](https://substreams.dev)
 [![Base](https://img.shields.io/badge/Network-Base-blue)](https://base.org)
 [![Aerodrome](https://img.shields.io/badge/DEX-Aerodrome-purple)](https://aerodrome.finance)
 [![SQL Sink](https://img.shields.io/badge/Sink-PostgreSQL%20%7C%20ClickHouse-green)](https://docs.substreams.dev)
@@ -83,12 +83,37 @@ Every one of the 13 tokenized stocks issued so far has been **renamed at least o
 pool creation goes stale, so `NameUpdated` / `SymbolUpdated` are indexed and the
 `b20_token_current` view resolves the live value.
 
-### What B20-ness does and does not prove
+### It indexes every B20, not just the stocks
 
-`createB20` is **permissionless** — anyone can create a B20 and name it anything. The
-address prefix proves a token is in the B20 namespace; it does **not** prove who issued it.
-Confirm the issuer before presenting a pool as a given company's stock. `stock_pools`
-narrows to the `asset` variant, which is a necessary filter, not a sufficient one.
+B20 is a general RWA standard and detection here is a pure address-prefix check, so **any**
+B20 indexes automatically — stablecoins, commodities, memecoins, whatever ships next. Running
+`map_b20_events` over a single 10,000-block window on Base found **503 newly created B20
+tokens**, from 210 distinct deployers.
+
+Almost none of them are stocks. That window was HouseCoin, ₿itcoin, BETTER COIN, Mortgage
+Coin — memecoins, 18 decimals, metadata keys `twitter` / `telegram` / `image`. **502 of the
+503 were the `asset` variant.**
+
+Which kills the obvious classifier: filtering on `b20_variant = 'asset'` would have labelled
+500 memecoins as tokenized stocks. The variant byte only separates `asset` from `stablecoin`,
+and the spec is explicit that Asset is general purpose — "assets of all kinds."
+
+The real signal is the **ISIN**. Every Coinbase tokenized stock publishes one through
+`ExtraMetadataUpdated` (`AAPLc` → `US0378331005`, `NVDAc` → `US67066G1040`), and none of the
+503 memecoins carried one. So the views form a ladder:
+
+| View | Contents | 10k-block sample |
+|---|---|---|
+| `b20_pools` | every pool holding any B20 | all of them |
+| `b20_asset_pools` | `asset` variant — tokenized anything | 502 of 503 |
+| `stock_pools` | `asset` variant **with a registered ISIN** | the actual securities |
+
+`b20_token_identity` exposes `isin`, `isin_country` and `is_security` per token.
+
+**What B20-ness still does not prove:** `createB20` is permissionless — anyone can create a
+B20, name it anything, and write any `isin` they like into metadata. The prefix proves
+namespace, the ISIN proves intent, neither proves issuance. Confirm the issuer before
+presenting a pool as a given company's stock.
 
 ## Architecture
 
@@ -186,13 +211,13 @@ roughly 10× shorter.
 
 ```bash
 substreams-sink-sql setup "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.3.1.spkg
+  aerodrome-substreams-v0.3.2.spkg
 substreams-sink-sql run   "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.3.1.spkg
+  aerodrome-substreams-v0.3.2.spkg
 
 # ClickHouse
 substreams-sink-sql setup "clickhouse://default:@localhost:9000/default" \
-  aerodrome-substreams-v0.3.1.spkg --engine=clickhouse
+  aerodrome-substreams-v0.3.2.spkg --engine=clickhouse
 ```
 
 ### Tables
@@ -211,8 +236,12 @@ substreams-sink-sql setup "clickhouse://default:@localhost:9000/default" \
 
 | View | Answers |
 |---|---|
-| `stock_pools` | Which pools trade tokenized stocks |
-| `stock_swaps` | Every stock trade, priced in the quote asset |
+| `b20_pools` | Every pool holding any B20 token |
+| `b20_asset_pools` | Asset-variant B20 pools (memecoins included) |
+| `stock_pools` | Asset-variant pools with a registered ISIN |
+| `b20_token_identity` | Per token: variant, symbol, ISIN, `is_security` |
+| `b20_swaps` | Every B20 trade across both venues |
+| `stock_swaps` | Tokenized-security trades, priced in the quote asset |
 | `stock_candles(interval)` | OHLCV at any bucket size (300 / 3600 / 14400 / 86400) |
 | `stock_pools_24h` | 24h volume, trades, high / low per stock pool |
 | `b20_token_current` | Live name and symbol, honouring renames |

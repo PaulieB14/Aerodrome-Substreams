@@ -187,6 +187,34 @@ SELECT
 FROM b20_events
 GROUP BY token;
 
+-- Latest value of each B20 extra-metadata key.
+CREATE VIEW IF NOT EXISTS b20_token_metadata AS
+SELECT token, key, argMax(text, block_number) AS value
+FROM b20_events
+WHERE event_type = 'extra_metadata_updated'
+GROUP BY token, key;
+
+-- What a B20 token actually is.
+--
+-- The variant byte only says asset vs stablecoin, and Asset is explicitly
+-- general purpose -- "assets of all kinds" -- so it does NOT mean equity. In a
+-- single 10k-block window on Base, 502 of 503 newly created B20s were the Asset
+-- variant and every one of them was a memecoin (HouseCoin, BETTER COIN...);
+-- none carried an ISIN. The ISIN is the real signal: a registered securities
+-- identifier, present on every Coinbase tokenized stock.
+CREATE VIEW IF NOT EXISTS b20_token_identity AS
+SELECT
+    c.token   AS token,
+    c.variant AS variant,
+    c.name    AS name,
+    c.symbol  AS symbol,
+    nullIf(coalesce(m.value, ''), '') AS isin,
+    substring(coalesce(m.value, ''), 1, 2) AS isin_country,
+    coalesce(m.value, '') != '' AS is_security
+FROM b20_token_current AS c
+LEFT JOIN (SELECT token, value FROM b20_token_metadata WHERE key = 'isin') AS m
+       ON m.token = c.token;
+
 -- Aerodrome pools holding a B20, with the B20 side identified.
 CREATE VIEW IF NOT EXISTS b20_pools AS
 SELECT
@@ -209,10 +237,18 @@ FROM pools AS p
 LEFT JOIN b20_token_current AS c ON c.token = p.b20_token
 WHERE p.is_b20;
 
--- Tokenized-stock pools: the B20 `asset` variant.
--- `createB20` is permissionless, so B20-ness alone does not identify the issuer.
-CREATE VIEW IF NOT EXISTS stock_pools AS
+-- Asset-variant B20 pools: tokenized anything, memecoins included.
+CREATE VIEW IF NOT EXISTS b20_asset_pools AS
 SELECT * FROM b20_pools WHERE b20_variant = 'asset';
+
+-- Tokenized-SECURITY pools: asset variant AND a registered ISIN.
+-- `createB20` is permissionless, so even an ISIN is self-declared metadata --
+-- confirm the issuer before presenting a pool as a given company's stock.
+CREATE VIEW IF NOT EXISTS stock_pools AS
+SELECT bp.*, id.isin AS isin, id.isin_country AS isin_country
+FROM b20_pools AS bp
+INNER JOIN b20_token_identity AS id ON id.token = bp.b20_token
+WHERE bp.b20_variant = 'asset' AND isNotNull(id.isin);
 
 -- Slipstream swaps with a price attached.
 -- Price comes from sqrtPriceX96 -- the pool's post-trade price -- so it is
@@ -243,7 +279,7 @@ INNER JOIN pools AS p ON p.address = s.pool_address;
 -- corporate action, because the multiplier is cosmetic to the AMM -- pool
 -- reserves are raw. `price_per_share` divides by the multiplier in force, so a
 -- split shows as a change in shares per token instead of a phantom price gap.
-CREATE VIEW IF NOT EXISTS stock_swaps AS
+CREATE VIEW IF NOT EXISTS b20_swaps AS
 SELECT
     s.id           AS id,
     s.tx_hash      AS tx_hash,
@@ -262,7 +298,7 @@ SELECT
     price_raw / (if(m.new_multiplier = '', 1e18, toFloat64(m.new_multiplier)) / 1e18) AS price_per_share,
     'cl' AS venue
 FROM cl_swaps_priced AS s
-INNER JOIN stock_pools AS bp ON bp.address = s.pool_address
+INNER JOIN b20_pools AS bp ON bp.address = s.pool_address
 -- ASOF resolves the multiplier in force at each swap's own timestamp. A plain
 -- join against the latest row would misprice every trade that happened before
 -- the most recent corporate action.
@@ -300,13 +336,20 @@ SELECT
     price_raw / (if(m2.new_multiplier = '', 1e18, toFloat64(m2.new_multiplier)) / 1e18) AS price_per_share,
     'v2' AS venue
 FROM aerodrome_swaps AS v
-INNER JOIN stock_pools AS bp ON bp.address = v.pool_address
+INNER JOIN b20_pools AS bp ON bp.address = v.pool_address
 ASOF LEFT JOIN (
     SELECT token, new_multiplier, effective_at
     FROM b20_multiplier_schedule
     WHERE NOT cancelled
 ) AS m2 ON m2.token = bp.b20_token AND m2.effective_at <= v.timestamp
 WHERE v.price_token1_per_token0 != '';
+
+-- Trades in tokenized securities only.
+CREATE VIEW IF NOT EXISTS stock_swaps AS
+SELECT b.*, id.isin AS isin
+FROM b20_swaps AS b
+INNER JOIN b20_token_identity AS id ON id.token = b.b20_token
+WHERE isNotNull(id.isin);
 
 -- Hourly OHLCV for tokenized stocks.
 CREATE VIEW IF NOT EXISTS stock_candles_1h AS
