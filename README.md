@@ -114,16 +114,22 @@ sf.ethereum.type.v2.Block
 Aerodrome inherits event signatures from the protocols it descends from, so **a topic match
 alone does not mean the log came from an Aerodrome pool**:
 
-| Event | Collides with | Measured |
-|---|---|---|
-| Slipstream `Swap` | Uniswap V3 and every V3 fork | byte-identical signature |
-| v2 `Mint(address,uint256,uint256)` | Uniswap V2 and every V2 fork | only **8 of 20** sampled Base emitters were Aerodrome pools |
-| v2 `Burn` | Uniswap V2 forks | contaminated in sampling |
-| v2 `Swap` | — | reordered params; effectively unique on Base |
+Sampling Base for each topic and checking every emitter against `PoolFactory.isPool()`
+(25 busiest emitters across three separate block windows):
 
-Membership in the factory-built registry is what actually identifies a pool, so every handler
-skips logs from pools it does not know. An ungated `Mint` handler would attribute the majority
-of its rows to contracts that are not Aerodrome at all.
+| Event | Aerodrome | Not Aerodrome | Contaminated |
+|---|---|---|---|
+| v2 `Mint(address,uint256,uint256)` | 12 | 13 | **52%** |
+| v2 `Burn` | 7 | 3 | **30%** |
+| v2 `Sync` | 24 | 1 | **4%** |
+| v2 `Swap` | 25 | 0 | 0% |
+| Slipstream `Swap` | — | — | byte-identical to Uniswap V3's |
+
+`Mint(address,uint256,uint256)` is byte-identical to Uniswap V2's, so **most** of an ungated
+handler's rows come from contracts that are not Aerodrome at all. Membership in the
+factory-built registry is what actually identifies a pool, so every handler skips logs from
+pools it does not know — including `Swap`, which measures clean but has no reason to be an
+exception.
 
 The registry starts at the v2 `PoolFactory` deployment, so it is complete. **Raising
 `initialBlock` above that trades completeness for backfill speed** — pools created before the
