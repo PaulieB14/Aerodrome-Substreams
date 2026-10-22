@@ -47,12 +47,7 @@ fn features_to_string(features: &[substreams::scalar::BigInt]) -> String {
 /// Decodes every B20 log in the block, plus `B20Created` from the factory precompile.
 #[substreams::handlers::map]
 pub fn map_b20_events(blk: eth::Block) -> Result<B20Events, substreams::errors::Error> {
-    let timestamp = blk
-        .header
-        .as_ref()
-        .and_then(|h| h.timestamp.as_ref())
-        .map(|t| t.seconds as u64)
-        .unwrap_or(0);
+    let timestamp = blk.header.timestamp.seconds as u64;
 
     let mut events: Vec<B20Event> = Vec::new();
     let mut multiplier_changes: Vec<B20MultiplierChange> = Vec::new();

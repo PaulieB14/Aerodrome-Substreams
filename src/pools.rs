@@ -202,12 +202,7 @@ pub fn map_pools(
     blk: eth::Block,
     factory_store: StoreGetInt64,
 ) -> Result<Pools, substreams::errors::Error> {
-    let timestamp = blk
-        .header
-        .as_ref()
-        .and_then(|h| h.timestamp.as_ref())
-        .map(|t| t.seconds as u64)
-        .unwrap_or(0);
+    let timestamp = blk.header.timestamp.seconds as u64;
 
     let mut pools: Vec<Pool> = Vec::new();
 

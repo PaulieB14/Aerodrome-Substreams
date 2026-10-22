@@ -57,11 +57,7 @@ use substreams_ethereum::pb::eth::v2 as eth;
 use substreams_ethereum::Event;
 
 fn block_timestamp(blk: &eth::Block) -> u64 {
-    blk.header
-        .as_ref()
-        .and_then(|h| h.timestamp.as_ref())
-        .map(|t| t.seconds as u64)
-        .unwrap_or(0)
+    blk.header.timestamp.seconds as u64
 }
 
 fn lookup_pool(store: &StoreGetProto<Pool>, pool_address: &str) -> Option<Pool> {

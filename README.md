@@ -1,6 +1,6 @@
 # Aerodrome Finance Substreams
 
-[![Substreams](https://img.shields.io/badge/Substreams-v0.3.2-blue)](https://substreams.dev)
+[![Substreams](https://img.shields.io/badge/Substreams-v0.4.0-blue)](https://substreams.dev)
 [![Base](https://img.shields.io/badge/Network-Base-blue)](https://base.org)
 [![Aerodrome](https://img.shields.io/badge/DEX-Aerodrome-purple)](https://aerodrome.finance)
 [![SQL Sink](https://img.shields.io/badge/Sink-PostgreSQL%20%7C%20ClickHouse-green)](https://docs.substreams.dev)
@@ -211,13 +211,13 @@ roughly 10× shorter.
 
 ```bash
 substreams-sink-sql setup "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.3.2.spkg
+  aerodrome-substreams-v0.4.0.spkg
 substreams-sink-sql run   "psql://postgres:password@localhost:5432/aerodrome?sslmode=disable" \
-  aerodrome-substreams-v0.3.2.spkg
+  aerodrome-substreams-v0.4.0.spkg
 
 # ClickHouse
 substreams-sink-sql setup "clickhouse://default:@localhost:9000/default" \
-  aerodrome-substreams-v0.3.2.spkg --engine=clickhouse
+  aerodrome-substreams-v0.4.0.spkg --engine=clickhouse
 ```
 
 ### Tables
