@@ -58,6 +58,12 @@ pub struct Pool {
     ///
     /// Field 16: `b20_variant`
     pub b20_variant: ::buffa::alloc::string::String,
+    /// v1.0.0: set when the B20 side is a Coinbase-issued tokenized stock.
+    ///
+    /// Field 17: `is_stock`
+    pub is_stock: bool,
+    /// Field 18: `stock_ticker`
+    pub stock_ticker: ::buffa::alloc::string::String,
 }
 impl ::core::fmt::Debug for Pool {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -78,6 +84,8 @@ impl ::core::fmt::Debug for Pool {
             .field("token0_symbol", &self.token0_symbol)
             .field("token1_symbol", &self.token1_symbol)
             .field("b20_variant", &self.b20_variant)
+            .field("is_stock", &self.is_stock)
+            .field("stock_ticker", &self.stock_ticker)
             .finish()
     }
 }
@@ -162,6 +170,12 @@ impl ::buffa::Message for Pool {
         if !self.b20_variant.is_empty() {
             size += 2u64 + ::buffa::types::string_encoded_len(&self.b20_variant) as u64;
         }
+        if self.is_stock {
+            size += 2u64 + ::buffa::types::BOOL_ENCODED_LEN as u64;
+        }
+        if !self.stock_ticker.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.stock_ticker) as u64;
+        }
         ::buffa::saturate_size(size)
     }
     fn write_to(
@@ -218,6 +232,12 @@ impl ::buffa::Message for Pool {
         }
         if !self.b20_variant.is_empty() {
             ::buffa::types::put_string_field(16u32, &self.b20_variant, buf);
+        }
+        if self.is_stock {
+            ::buffa::types::put_bool_field(17u32, self.is_stock, buf);
+        }
+        if !self.stock_ticker.is_empty() {
+            ::buffa::types::put_string_field(18u32, &self.stock_ticker, buf);
         }
     }
     fn merge_field(
@@ -343,6 +363,20 @@ impl ::buffa::Message for Pool {
                 )?;
                 ::buffa::types::merge_string(&mut self.b20_variant, buf)?;
             }
+            17u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.is_stock = ::buffa::types::decode_bool(buf)?;
+            }
+            18u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.stock_ticker, buf)?;
+            }
             _ => {
                 ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?;
             }
@@ -366,6 +400,8 @@ impl ::buffa::Message for Pool {
         self.token0_symbol.clear();
         self.token1_symbol.clear();
         self.b20_variant.clear();
+        self.is_stock = false;
+        self.stock_ticker.clear();
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -3202,6 +3238,12 @@ pub struct B20Event {
     ///
     /// Field 20: `pause_features`
     pub pause_features: ::buffa::alloc::string::String,
+    /// b20_created only: the creating transaction also carries a log from the
+    /// Coinbase Tokenized Stocks token factory (0x4ba3e29e...534d, per
+    /// GET <https://api.coinbase.com/v1/tokenized-stocks/chains>), i.e. a Coinbase-issued stock.
+    ///
+    /// Field 21: `coinbase_issued`
+    pub coinbase_issued: bool,
 }
 impl ::core::fmt::Debug for B20Event {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -3226,6 +3268,7 @@ impl ::core::fmt::Debug for B20Event {
             .field("uri", &self.uri)
             .field("in_announcement", &self.in_announcement)
             .field("pause_features", &self.pause_features)
+            .field("coinbase_issued", &self.coinbase_issued)
             .finish()
     }
 }
@@ -3322,6 +3365,9 @@ impl ::buffa::Message for B20Event {
                 += 2u64
                     + ::buffa::types::string_encoded_len(&self.pause_features) as u64;
         }
+        if self.coinbase_issued {
+            size += 2u64 + ::buffa::types::BOOL_ENCODED_LEN as u64;
+        }
         ::buffa::saturate_size(size)
     }
     fn write_to(
@@ -3390,6 +3436,9 @@ impl ::buffa::Message for B20Event {
         }
         if !self.pause_features.is_empty() {
             ::buffa::types::put_string_field(20u32, &self.pause_features, buf);
+        }
+        if self.coinbase_issued {
+            ::buffa::types::put_bool_field(21u32, self.coinbase_issued, buf);
         }
     }
     fn merge_field(
@@ -3543,6 +3592,13 @@ impl ::buffa::Message for B20Event {
                 )?;
                 ::buffa::types::merge_string(&mut self.pause_features, buf)?;
             }
+            21u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.coinbase_issued = ::buffa::types::decode_bool(buf)?;
+            }
             _ => {
                 ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?;
             }
@@ -3570,6 +3626,7 @@ impl ::buffa::Message for B20Event {
         self.uri.clear();
         self.in_announcement = false;
         self.pause_features.clear();
+        self.coinbase_issued = false;
     }
 }
 /// A multiplier change, which is how splits and reinvested dividends are applied.
@@ -3849,5 +3906,1038 @@ impl ::buffa::Message for B20MultiplierChange {
         self.scheduled = false;
         self.cancelled = false;
         self.announcement_id.clear();
+    }
+}
+/// ---------------------------------------------------------------------------
+/// v1.0.0: Coinbase tokenized stocks (B20 Asset) trading on Aerodrome
+/// ---------------------------------------------------------------------------
+///
+/// A swap in a classic (v2) or Slipstream (cl) pool whose token0 or token1 is a
+/// Coinbase-issued tokenized stock.
+#[derive(Clone, PartialEq, Default)]
+pub struct StockSwap {
+    /// Field 1: `block_number`
+    pub block_number: u64,
+    /// Field 2: `transaction_hash`
+    pub transaction_hash: ::buffa::alloc::string::String,
+    /// Field 3: `log_index`
+    pub log_index: u64,
+    /// Field 4: `timestamp`
+    pub timestamp: u64,
+    /// Field 5: `pool_address`
+    pub pool_address: ::buffa::alloc::string::String,
+    /// v2_volatile | v2_stable | cl
+    ///
+    /// Field 6: `pool_type`
+    pub pool_type: ::buffa::alloc::string::String,
+    /// Field 7: `ticker`
+    pub ticker: ::buffa::alloc::string::String,
+    /// Field 8: `stock_token`
+    pub stock_token: ::buffa::alloc::string::String,
+    /// Field 9: `quote_token`
+    pub quote_token: ::buffa::alloc::string::String,
+    /// Field 10: `quote_symbol`
+    pub quote_symbol: ::buffa::alloc::string::String,
+    /// "buy" = the trader received the stock (pool's stock balance fell), "sell" otherwise.
+    ///
+    /// Field 11: `side`
+    pub side: ::buffa::alloc::string::String,
+    /// magnitude, raw units
+    ///
+    /// Field 12: `stock_amount_raw`
+    pub stock_amount_raw: ::buffa::alloc::string::String,
+    /// magnitude, raw units
+    ///
+    /// Field 13: `quote_amount_raw`
+    pub quote_amount_raw: ::buffa::alloc::string::String,
+    /// Field 14: `stock_decimals`
+    pub stock_decimals: i32,
+    /// Field 15: `quote_decimals`
+    pub quote_decimals: i32,
+    /// decimalized token amount
+    ///
+    /// Field 16: `stock_amount`
+    pub stock_amount: ::buffa::alloc::string::String,
+    /// decimalized
+    ///
+    /// Field 17: `quote_amount`
+    pub quote_amount: ::buffa::alloc::string::String,
+    /// B20 UI multiplier in effect at the block timestamp (WAD, 1e18 = 1.0).
+    ///
+    /// Field 18: `multiplier`
+    pub multiplier: ::buffa::alloc::string::String,
+    /// stock_amount * multiplier / 1e18 -- the share-equivalent count.
+    ///
+    /// Field 19: `share_amount`
+    pub share_amount: ::buffa::alloc::string::String,
+    /// Set only when the quote token is a USD stablecoin (native USDC).
+    ///
+    /// Field 20: `usd_notional`
+    pub usd_notional: ::buffa::alloc::string::String,
+    /// Field 21: `usd_price_per_token`
+    pub usd_price_per_token: ::buffa::alloc::string::String,
+    /// Field 22: `usd_price_per_share`
+    pub usd_price_per_share: ::buffa::alloc::string::String,
+    /// Field 23: `sender`
+    pub sender: ::buffa::alloc::string::String,
+    /// Field 24: `recipient`
+    pub recipient: ::buffa::alloc::string::String,
+}
+impl ::core::fmt::Debug for StockSwap {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("StockSwap")
+            .field("block_number", &self.block_number)
+            .field("transaction_hash", &self.transaction_hash)
+            .field("log_index", &self.log_index)
+            .field("timestamp", &self.timestamp)
+            .field("pool_address", &self.pool_address)
+            .field("pool_type", &self.pool_type)
+            .field("ticker", &self.ticker)
+            .field("stock_token", &self.stock_token)
+            .field("quote_token", &self.quote_token)
+            .field("quote_symbol", &self.quote_symbol)
+            .field("side", &self.side)
+            .field("stock_amount_raw", &self.stock_amount_raw)
+            .field("quote_amount_raw", &self.quote_amount_raw)
+            .field("stock_decimals", &self.stock_decimals)
+            .field("quote_decimals", &self.quote_decimals)
+            .field("stock_amount", &self.stock_amount)
+            .field("quote_amount", &self.quote_amount)
+            .field("multiplier", &self.multiplier)
+            .field("share_amount", &self.share_amount)
+            .field("usd_notional", &self.usd_notional)
+            .field("usd_price_per_token", &self.usd_price_per_token)
+            .field("usd_price_per_share", &self.usd_price_per_share)
+            .field("sender", &self.sender)
+            .field("recipient", &self.recipient)
+            .finish()
+    }
+}
+impl StockSwap {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.StockSwap";
+}
+::buffa::impl_default_instance!(StockSwap);
+impl ::buffa::MessageName for StockSwap {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "StockSwap";
+    const FULL_NAME: &'static str = "aerodrome.StockSwap";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.StockSwap";
+}
+impl ::buffa::Message for StockSwap {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// Accumulates in `u64` (which cannot overflow for in-memory
+    /// data) and saturates to `u32` at return, so a message whose
+    /// encoded size exceeds the 2 GiB protobuf limit yields a value
+    /// above [`::buffa::MAX_MESSAGE_BYTES`] that the encode entry
+    /// points reject, never a silently wrapped size.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        if self.block_number != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.block_number) as u64;
+        }
+        if !self.transaction_hash.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.transaction_hash) as u64;
+        }
+        if self.log_index != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.log_index) as u64;
+        }
+        if self.timestamp != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.timestamp) as u64;
+        }
+        if !self.pool_address.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool_address) as u64;
+        }
+        if !self.pool_type.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool_type) as u64;
+        }
+        if !self.ticker.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.ticker) as u64;
+        }
+        if !self.stock_token.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.stock_token) as u64;
+        }
+        if !self.quote_token.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.quote_token) as u64;
+        }
+        if !self.quote_symbol.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.quote_symbol) as u64;
+        }
+        if !self.side.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.side) as u64;
+        }
+        if !self.stock_amount_raw.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.stock_amount_raw) as u64;
+        }
+        if !self.quote_amount_raw.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.quote_amount_raw) as u64;
+        }
+        if self.stock_decimals != 0i32 {
+            size += 1u64 + ::buffa::types::int32_encoded_len(self.stock_decimals) as u64;
+        }
+        if self.quote_decimals != 0i32 {
+            size += 1u64 + ::buffa::types::int32_encoded_len(self.quote_decimals) as u64;
+        }
+        if !self.stock_amount.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.stock_amount) as u64;
+        }
+        if !self.quote_amount.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.quote_amount) as u64;
+        }
+        if !self.multiplier.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.multiplier) as u64;
+        }
+        if !self.share_amount.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.share_amount) as u64;
+        }
+        if !self.usd_notional.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.usd_notional) as u64;
+        }
+        if !self.usd_price_per_token.is_empty() {
+            size
+                += 2u64
+                    + ::buffa::types::string_encoded_len(&self.usd_price_per_token)
+                        as u64;
+        }
+        if !self.usd_price_per_share.is_empty() {
+            size
+                += 2u64
+                    + ::buffa::types::string_encoded_len(&self.usd_price_per_share)
+                        as u64;
+        }
+        if !self.sender.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.sender) as u64;
+        }
+        if !self.recipient.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.recipient) as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    fn write_to(
+        &self,
+        _cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.block_number != 0u64 {
+            ::buffa::types::put_uint64_field(1u32, self.block_number, buf);
+        }
+        if !self.transaction_hash.is_empty() {
+            ::buffa::types::put_string_field(2u32, &self.transaction_hash, buf);
+        }
+        if self.log_index != 0u64 {
+            ::buffa::types::put_uint64_field(3u32, self.log_index, buf);
+        }
+        if self.timestamp != 0u64 {
+            ::buffa::types::put_uint64_field(4u32, self.timestamp, buf);
+        }
+        if !self.pool_address.is_empty() {
+            ::buffa::types::put_string_field(5u32, &self.pool_address, buf);
+        }
+        if !self.pool_type.is_empty() {
+            ::buffa::types::put_string_field(6u32, &self.pool_type, buf);
+        }
+        if !self.ticker.is_empty() {
+            ::buffa::types::put_string_field(7u32, &self.ticker, buf);
+        }
+        if !self.stock_token.is_empty() {
+            ::buffa::types::put_string_field(8u32, &self.stock_token, buf);
+        }
+        if !self.quote_token.is_empty() {
+            ::buffa::types::put_string_field(9u32, &self.quote_token, buf);
+        }
+        if !self.quote_symbol.is_empty() {
+            ::buffa::types::put_string_field(10u32, &self.quote_symbol, buf);
+        }
+        if !self.side.is_empty() {
+            ::buffa::types::put_string_field(11u32, &self.side, buf);
+        }
+        if !self.stock_amount_raw.is_empty() {
+            ::buffa::types::put_string_field(12u32, &self.stock_amount_raw, buf);
+        }
+        if !self.quote_amount_raw.is_empty() {
+            ::buffa::types::put_string_field(13u32, &self.quote_amount_raw, buf);
+        }
+        if self.stock_decimals != 0i32 {
+            ::buffa::types::put_int32_field(14u32, self.stock_decimals, buf);
+        }
+        if self.quote_decimals != 0i32 {
+            ::buffa::types::put_int32_field(15u32, self.quote_decimals, buf);
+        }
+        if !self.stock_amount.is_empty() {
+            ::buffa::types::put_string_field(16u32, &self.stock_amount, buf);
+        }
+        if !self.quote_amount.is_empty() {
+            ::buffa::types::put_string_field(17u32, &self.quote_amount, buf);
+        }
+        if !self.multiplier.is_empty() {
+            ::buffa::types::put_string_field(18u32, &self.multiplier, buf);
+        }
+        if !self.share_amount.is_empty() {
+            ::buffa::types::put_string_field(19u32, &self.share_amount, buf);
+        }
+        if !self.usd_notional.is_empty() {
+            ::buffa::types::put_string_field(20u32, &self.usd_notional, buf);
+        }
+        if !self.usd_price_per_token.is_empty() {
+            ::buffa::types::put_string_field(21u32, &self.usd_price_per_token, buf);
+        }
+        if !self.usd_price_per_share.is_empty() {
+            ::buffa::types::put_string_field(22u32, &self.usd_price_per_share, buf);
+        }
+        if !self.sender.is_empty() {
+            ::buffa::types::put_string_field(23u32, &self.sender, buf);
+        }
+        if !self.recipient.is_empty() {
+            ::buffa::types::put_string_field(24u32, &self.recipient, buf);
+        }
+    }
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.block_number = ::buffa::types::decode_uint64(buf)?;
+            }
+            2u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.transaction_hash, buf)?;
+            }
+            3u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.log_index = ::buffa::types::decode_uint64(buf)?;
+            }
+            4u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.timestamp = ::buffa::types::decode_uint64(buf)?;
+            }
+            5u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.pool_address, buf)?;
+            }
+            6u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.pool_type, buf)?;
+            }
+            7u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.ticker, buf)?;
+            }
+            8u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.stock_token, buf)?;
+            }
+            9u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.quote_token, buf)?;
+            }
+            10u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.quote_symbol, buf)?;
+            }
+            11u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.side, buf)?;
+            }
+            12u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.stock_amount_raw, buf)?;
+            }
+            13u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.quote_amount_raw, buf)?;
+            }
+            14u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.stock_decimals = ::buffa::types::decode_int32(buf)?;
+            }
+            15u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.quote_decimals = ::buffa::types::decode_int32(buf)?;
+            }
+            16u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.stock_amount, buf)?;
+            }
+            17u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.quote_amount, buf)?;
+            }
+            18u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.multiplier, buf)?;
+            }
+            19u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.share_amount, buf)?;
+            }
+            20u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.usd_notional, buf)?;
+            }
+            21u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.usd_price_per_token, buf)?;
+            }
+            22u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.usd_price_per_share, buf)?;
+            }
+            23u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.sender, buf)?;
+            }
+            24u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.recipient, buf)?;
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+    fn clear(&mut self) {
+        self.block_number = 0u64;
+        self.transaction_hash.clear();
+        self.log_index = 0u64;
+        self.timestamp = 0u64;
+        self.pool_address.clear();
+        self.pool_type.clear();
+        self.ticker.clear();
+        self.stock_token.clear();
+        self.quote_token.clear();
+        self.quote_symbol.clear();
+        self.side.clear();
+        self.stock_amount_raw.clear();
+        self.quote_amount_raw.clear();
+        self.stock_decimals = 0i32;
+        self.quote_decimals = 0i32;
+        self.stock_amount.clear();
+        self.quote_amount.clear();
+        self.multiplier.clear();
+        self.share_amount.clear();
+        self.usd_notional.clear();
+        self.usd_price_per_token.clear();
+        self.usd_price_per_share.clear();
+        self.sender.clear();
+        self.recipient.clear();
+    }
+}
+#[derive(Clone, PartialEq, Default)]
+pub struct StockSwaps {
+    /// Field 1: `swaps`
+    pub swaps: ::buffa::alloc::vec::Vec<StockSwap>,
+}
+impl ::core::fmt::Debug for StockSwaps {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("StockSwaps").field("swaps", &self.swaps).finish()
+    }
+}
+impl StockSwaps {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.StockSwaps";
+}
+::buffa::impl_default_instance!(StockSwaps);
+impl ::buffa::MessageName for StockSwaps {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "StockSwaps";
+    const FULL_NAME: &'static str = "aerodrome.StockSwaps";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.StockSwaps";
+}
+impl ::buffa::Message for StockSwaps {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// Accumulates in `u64` (which cannot overflow for in-memory
+    /// data) and saturates to `u32` at return, so a message whose
+    /// encoded size exceeds the 2 GiB protobuf limit yields a value
+    /// above [`::buffa::MAX_MESSAGE_BYTES`] that the encode entry
+    /// points reject, never a silently wrapped size.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        for v in &self.swaps {
+            let __slot = __cache.reserve();
+            let inner_size = v.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size
+                += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.swaps {
+            ::buffa::types::put_len_delimited_header(
+                1u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
+            v.write_to(__cache, buf);
+        }
+    }
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
+                self.swaps.push(elem);
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+    fn clear(&mut self) {
+        self.swaps.clear();
+    }
+}
+/// Voter gauge lifecycle and votes (aerodrome-finance/contracts IVoter.sol).
+#[derive(Clone, PartialEq, Default)]
+pub struct GaugeEvent {
+    /// Field 1: `block_number`
+    pub block_number: u64,
+    /// Field 2: `transaction_hash`
+    pub transaction_hash: ::buffa::alloc::string::String,
+    /// Field 3: `log_index`
+    pub log_index: u64,
+    /// Field 4: `timestamp`
+    pub timestamp: u64,
+    /// gauge_created | gauge_killed | gauge_revived | voted | abstained
+    ///
+    /// Field 5: `event_type`
+    pub event_type: ::buffa::alloc::string::String,
+    /// Field 6: `gauge`
+    pub gauge: ::buffa::alloc::string::String,
+    /// Field 7: `pool`
+    pub pool: ::buffa::alloc::string::String,
+    /// Field 8: `pool_factory`
+    pub pool_factory: ::buffa::alloc::string::String,
+    /// Field 9: `bribe_voting_reward`
+    pub bribe_voting_reward: ::buffa::alloc::string::String,
+    /// Field 10: `fee_voting_reward`
+    pub fee_voting_reward: ::buffa::alloc::string::String,
+    /// Field 11: `creator`
+    pub creator: ::buffa::alloc::string::String,
+    /// Field 12: `voter`
+    pub voter: ::buffa::alloc::string::String,
+    /// Field 13: `token_id`
+    pub token_id: ::buffa::alloc::string::String,
+    /// Field 14: `weight`
+    pub weight: ::buffa::alloc::string::String,
+    /// Field 15: `total_weight`
+    pub total_weight: ::buffa::alloc::string::String,
+}
+impl ::core::fmt::Debug for GaugeEvent {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("GaugeEvent")
+            .field("block_number", &self.block_number)
+            .field("transaction_hash", &self.transaction_hash)
+            .field("log_index", &self.log_index)
+            .field("timestamp", &self.timestamp)
+            .field("event_type", &self.event_type)
+            .field("gauge", &self.gauge)
+            .field("pool", &self.pool)
+            .field("pool_factory", &self.pool_factory)
+            .field("bribe_voting_reward", &self.bribe_voting_reward)
+            .field("fee_voting_reward", &self.fee_voting_reward)
+            .field("creator", &self.creator)
+            .field("voter", &self.voter)
+            .field("token_id", &self.token_id)
+            .field("weight", &self.weight)
+            .field("total_weight", &self.total_weight)
+            .finish()
+    }
+}
+impl GaugeEvent {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.GaugeEvent";
+}
+::buffa::impl_default_instance!(GaugeEvent);
+impl ::buffa::MessageName for GaugeEvent {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "GaugeEvent";
+    const FULL_NAME: &'static str = "aerodrome.GaugeEvent";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.GaugeEvent";
+}
+impl ::buffa::Message for GaugeEvent {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// Accumulates in `u64` (which cannot overflow for in-memory
+    /// data) and saturates to `u32` at return, so a message whose
+    /// encoded size exceeds the 2 GiB protobuf limit yields a value
+    /// above [`::buffa::MAX_MESSAGE_BYTES`] that the encode entry
+    /// points reject, never a silently wrapped size.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        if self.block_number != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.block_number) as u64;
+        }
+        if !self.transaction_hash.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.transaction_hash) as u64;
+        }
+        if self.log_index != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.log_index) as u64;
+        }
+        if self.timestamp != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.timestamp) as u64;
+        }
+        if !self.event_type.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.event_type) as u64;
+        }
+        if !self.gauge.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.gauge) as u64;
+        }
+        if !self.pool.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool) as u64;
+        }
+        if !self.pool_factory.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool_factory) as u64;
+        }
+        if !self.bribe_voting_reward.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.bribe_voting_reward)
+                        as u64;
+        }
+        if !self.fee_voting_reward.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.fee_voting_reward) as u64;
+        }
+        if !self.creator.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.creator) as u64;
+        }
+        if !self.voter.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.voter) as u64;
+        }
+        if !self.token_id.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.token_id) as u64;
+        }
+        if !self.weight.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.weight) as u64;
+        }
+        if !self.total_weight.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.total_weight) as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    fn write_to(
+        &self,
+        _cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.block_number != 0u64 {
+            ::buffa::types::put_uint64_field(1u32, self.block_number, buf);
+        }
+        if !self.transaction_hash.is_empty() {
+            ::buffa::types::put_string_field(2u32, &self.transaction_hash, buf);
+        }
+        if self.log_index != 0u64 {
+            ::buffa::types::put_uint64_field(3u32, self.log_index, buf);
+        }
+        if self.timestamp != 0u64 {
+            ::buffa::types::put_uint64_field(4u32, self.timestamp, buf);
+        }
+        if !self.event_type.is_empty() {
+            ::buffa::types::put_string_field(5u32, &self.event_type, buf);
+        }
+        if !self.gauge.is_empty() {
+            ::buffa::types::put_string_field(6u32, &self.gauge, buf);
+        }
+        if !self.pool.is_empty() {
+            ::buffa::types::put_string_field(7u32, &self.pool, buf);
+        }
+        if !self.pool_factory.is_empty() {
+            ::buffa::types::put_string_field(8u32, &self.pool_factory, buf);
+        }
+        if !self.bribe_voting_reward.is_empty() {
+            ::buffa::types::put_string_field(9u32, &self.bribe_voting_reward, buf);
+        }
+        if !self.fee_voting_reward.is_empty() {
+            ::buffa::types::put_string_field(10u32, &self.fee_voting_reward, buf);
+        }
+        if !self.creator.is_empty() {
+            ::buffa::types::put_string_field(11u32, &self.creator, buf);
+        }
+        if !self.voter.is_empty() {
+            ::buffa::types::put_string_field(12u32, &self.voter, buf);
+        }
+        if !self.token_id.is_empty() {
+            ::buffa::types::put_string_field(13u32, &self.token_id, buf);
+        }
+        if !self.weight.is_empty() {
+            ::buffa::types::put_string_field(14u32, &self.weight, buf);
+        }
+        if !self.total_weight.is_empty() {
+            ::buffa::types::put_string_field(15u32, &self.total_weight, buf);
+        }
+    }
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.block_number = ::buffa::types::decode_uint64(buf)?;
+            }
+            2u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.transaction_hash, buf)?;
+            }
+            3u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.log_index = ::buffa::types::decode_uint64(buf)?;
+            }
+            4u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                self.timestamp = ::buffa::types::decode_uint64(buf)?;
+            }
+            5u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.event_type, buf)?;
+            }
+            6u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.gauge, buf)?;
+            }
+            7u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.pool, buf)?;
+            }
+            8u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.pool_factory, buf)?;
+            }
+            9u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.bribe_voting_reward, buf)?;
+            }
+            10u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.fee_voting_reward, buf)?;
+            }
+            11u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.creator, buf)?;
+            }
+            12u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.voter, buf)?;
+            }
+            13u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.token_id, buf)?;
+            }
+            14u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.weight, buf)?;
+            }
+            15u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(&mut self.total_weight, buf)?;
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+    fn clear(&mut self) {
+        self.block_number = 0u64;
+        self.transaction_hash.clear();
+        self.log_index = 0u64;
+        self.timestamp = 0u64;
+        self.event_type.clear();
+        self.gauge.clear();
+        self.pool.clear();
+        self.pool_factory.clear();
+        self.bribe_voting_reward.clear();
+        self.fee_voting_reward.clear();
+        self.creator.clear();
+        self.voter.clear();
+        self.token_id.clear();
+        self.weight.clear();
+        self.total_weight.clear();
+    }
+}
+#[derive(Clone, PartialEq, Default)]
+pub struct GaugeEvents {
+    /// Field 1: `events`
+    pub events: ::buffa::alloc::vec::Vec<GaugeEvent>,
+}
+impl ::core::fmt::Debug for GaugeEvents {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("GaugeEvents").field("events", &self.events).finish()
+    }
+}
+impl GaugeEvents {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.GaugeEvents";
+}
+::buffa::impl_default_instance!(GaugeEvents);
+impl ::buffa::MessageName for GaugeEvents {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "GaugeEvents";
+    const FULL_NAME: &'static str = "aerodrome.GaugeEvents";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.GaugeEvents";
+}
+impl ::buffa::Message for GaugeEvents {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// Accumulates in `u64` (which cannot overflow for in-memory
+    /// data) and saturates to `u32` at return, so a message whose
+    /// encoded size exceeds the 2 GiB protobuf limit yields a value
+    /// above [`::buffa::MAX_MESSAGE_BYTES`] that the encode entry
+    /// points reject, never a silently wrapped size.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        for v in &self.events {
+            let __slot = __cache.reserve();
+            let inner_size = v.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size
+                += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.events {
+            ::buffa::types::put_len_delimited_header(
+                1u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
+            v.write_to(__cache, buf);
+        }
+    }
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
+                self.events.push(elem);
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+    fn clear(&mut self) {
+        self.events.clear();
     }
 }

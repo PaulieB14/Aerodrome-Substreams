@@ -128,3 +128,27 @@ pub use self::__buffa::view::B20MultiplierChangeView;
 pub use self::__buffa::view::B20MultiplierChangeOwnedView;
 #[doc(inline)]
 pub use self::__buffa::lazy_view::B20MultiplierChangeLazyView;
+#[doc(inline)]
+pub use self::__buffa::view::StockSwapView;
+#[doc(inline)]
+pub use self::__buffa::view::StockSwapOwnedView;
+#[doc(inline)]
+pub use self::__buffa::lazy_view::StockSwapLazyView;
+#[doc(inline)]
+pub use self::__buffa::view::StockSwapsView;
+#[doc(inline)]
+pub use self::__buffa::view::StockSwapsOwnedView;
+#[doc(inline)]
+pub use self::__buffa::lazy_view::StockSwapsLazyView;
+#[doc(inline)]
+pub use self::__buffa::view::GaugeEventView;
+#[doc(inline)]
+pub use self::__buffa::view::GaugeEventOwnedView;
+#[doc(inline)]
+pub use self::__buffa::lazy_view::GaugeEventLazyView;
+#[doc(inline)]
+pub use self::__buffa::view::GaugeEventsView;
+#[doc(inline)]
+pub use self::__buffa::view::GaugeEventsOwnedView;
+#[doc(inline)]
+pub use self::__buffa::lazy_view::GaugeEventsLazyView;

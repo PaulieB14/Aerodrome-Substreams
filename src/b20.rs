@@ -29,6 +29,13 @@ pub const B20_FACTORY: [u8; 20] = [
     0xb2, 0x0f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
+/// Coinbase Tokenized Stocks token factory on Base. Source: the official
+/// `GET https://api.coinbase.com/v1/tokenized-stocks/chains` (`token_factory_address`),
+/// documented at https://docs.base.org/sdks/tokenized-stocks/api-reference/list-protocol-contract-addresses.
+/// Every Coinbase stock's `B20Created` transaction also carries a log from it
+/// (verified via RPC on NVDAc's creation tx 0x35e3070e...a507, block 49,145,311).
+pub const COINBASE_TOKEN_FACTORY: [u8; 20] = hex_literal::hex!("4ba3e29e254f25e94e61c4c9d67b37027331534d");
+
 /// `0xb2` followed by nine zero bytes -- the prefix shared by every B20 address.
 pub const B20_ADDRESS_PREFIX: [u8; 10] = [0xb2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 

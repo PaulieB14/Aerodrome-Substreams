@@ -34,6 +34,11 @@ mod pb;
 mod b20_events;
 mod pools;
 mod stores;
+mod stock_list;
+pub mod stocks;
+mod gauges;
+pub use gauges::map_gauge_events;
+pub use stocks::{map_stock_swaps, store_stock_daily_volume, store_stock_registry};
 
 pub use b20_events::map_b20_events;
 pub use pools::{map_factories, map_pools, store_factories};
@@ -49,7 +54,7 @@ use pb::aerodrome::{
 };
 use std::str::FromStr;
 use substreams::scalar::BigInt;
-use substreams::store::{StoreGet, StoreGetProto};
+use substreams::store::{DeltaBigDecimal, Deltas, StoreGet, StoreGetProto, StoreGetString};
 use substreams::Hex;
 use substreams_database_change::pb::database::DatabaseChanges;
 use substreams_database_change::tables::Tables;
@@ -62,6 +67,15 @@ fn block_timestamp(blk: &eth::Block) -> u64 {
 
 fn lookup_pool(store: &StoreGetProto<Pool>, pool_address: &str) -> Option<Pool> {
     store.get_last(stores::pool_key(pool_address))
+}
+
+/// `BigInt::to_u64` panics on overflow (v0.3.2 halted at block 13,847,696 on a
+/// v2 swap whose summed amounts exceed u64). Saturate instead.
+pub(crate) fn sat_u64(value: &BigInt) -> u64 {
+    if value.lt(&BigInt::zero()) {
+        return 0;
+    }
+    value.to_string().parse::<u64>().unwrap_or(u64::MAX)
 }
 
 fn big(value: &str) -> BigInt {
@@ -145,8 +159,8 @@ pub fn map_swaps(
         .iter()
         .fold(BigInt::zero(), |acc, s| {
             acc + big(&s.amount0_in) + big(&s.amount1_in)
-        })
-        .to_u64();
+        });
+    let total_volume = sat_u64(&total_volume);
 
     Ok(SwapEvents {
         swaps,
@@ -430,6 +444,10 @@ pub fn db_out(
     cl_swaps: ClSwaps,
     cl_liquidity: ClLiquidityEvents,
     b20: B20Events,
+    stock_swaps: pb::aerodrome::StockSwaps,
+    stock_daily: Deltas<DeltaBigDecimal>,
+    stock_registry: StoreGetString,
+    gauges: pb::aerodrome::GaugeEvents,
 ) -> Result<DatabaseChanges, substreams::errors::Error> {
     let mut tables = Tables::new();
 
@@ -451,7 +469,9 @@ pub fn db_out(
             .set("token0_decimals", pool.token0_decimals)
             .set("token1_decimals", pool.token1_decimals)
             .set("token0_symbol", &pool.token0_symbol)
-            .set("token1_symbol", &pool.token1_symbol);
+            .set("token1_symbol", &pool.token1_symbol)
+            .set("is_stock", pool.is_stock)
+            .set("stock_ticker", &pool.stock_ticker);
     }
 
     for swap in &swaps.swaps {
@@ -509,8 +529,13 @@ pub fn db_out(
     for event in &cl_liquidity.events {
         let event_id = format!("{}:{}", event.transaction_hash, event.log_index);
 
-        tables
-            .create_row("aerodrome_cl_liquidity", &event_id)
+        let row = tables.create_row("aerodrome_cl_liquidity", &event_id);
+        // `amount` (liquidity delta) is empty for Collect; NULL instead of an
+        // invalid empty NUMERIC string.
+        if !event.amount.is_empty() {
+            row.set("amount", &event.amount);
+        }
+        row
             .set("tx_hash", &event.transaction_hash)
             .set("log_index", event.log_index)
             .set("block_number", event.block_number)
@@ -522,7 +547,6 @@ pub fn db_out(
             .set("recipient", &event.recipient)
             .set("tick_lower", event.tick_lower)
             .set("tick_upper", event.tick_upper)
-            .set("amount", &event.amount)
             .set("amount0", &event.amount0)
             .set("amount1", &event.amount1)
             .set("token0", &event.token0)
@@ -534,8 +558,15 @@ pub fn db_out(
     for event in &b20.events {
         let event_id = format!("{}:{}", event.transaction_hash, event.log_index);
 
-        tables
-            .create_row("b20_events", &event_id)
+        let row = tables.create_row("b20_events", &event_id);
+        // NUMERIC columns: an empty string is not a valid NUMERIC and halts the
+        // SQL sink (v0.3.x bug), so they are left NULL when the event has no value.
+        for (col, v) in [("amount", &event.amount), ("old_value", &event.old_value), ("new_value", &event.new_value)] {
+            if !v.is_empty() {
+                row.set(col, v);
+            }
+        }
+        row
             .set("tx_hash", &event.transaction_hash)
             .set("log_index", event.log_index)
             .set("block_number", event.block_number)
@@ -546,9 +577,6 @@ pub fn db_out(
             .set("actor", &event.actor)
             .set("account", &event.account)
             .set("recipient", &event.recipient)
-            .set("amount", &event.amount)
-            .set("old_value", &event.old_value)
-            .set("new_value", &event.new_value)
             .set("effective_at", event.effective_at as i64)
             .set("key", &event.key)
             .set("text", &event.text)
@@ -580,11 +608,14 @@ pub fn db_out(
     for change in &b20.multiplier_changes {
         let change_id = format!("{}:{}", change.transaction_hash, change.log_index);
 
-        tables
-            .create_row("b20_multiplier_schedule", &change_id)
+        let row = tables.create_row("b20_multiplier_schedule", &change_id);
+        for (col, v) in [("old_multiplier", &change.old_multiplier), ("new_multiplier", &change.new_multiplier)] {
+            if !v.is_empty() {
+                row.set(col, v);
+            }
+        }
+        row
             .set("token", &change.token)
-            .set("old_multiplier", &change.old_multiplier)
-            .set("new_multiplier", &change.new_multiplier)
             .set("effective_at", change.effective_at as i64)
             .set("announced_block", change.announced_block)
             .set("announced_timestamp", change.announced_timestamp as i64)
@@ -595,5 +626,152 @@ pub fn db_out(
             .set("announcement_id", &change.announcement_id);
     }
 
+    // -- v1.0.0: tokenized stocks ------------------------------------------
+    for sw in &stock_swaps.swaps {
+        let id = format!("{}:{}", sw.transaction_hash, sw.log_index);
+        let row = tables.create_row("stock_trades", &id);
+        row
+            .set("tx_hash", &sw.transaction_hash)
+            .set("log_index", sw.log_index)
+            .set("block_number", sw.block_number)
+            .set("timestamp", sw.timestamp as i64)
+            .set("pool_address", &sw.pool_address)
+            .set("pool_type", &sw.pool_type)
+            .set("ticker", &sw.ticker)
+            .set("stock_token", &sw.stock_token)
+            .set("quote_token", &sw.quote_token)
+            .set("quote_symbol", &sw.quote_symbol)
+            .set("side", &sw.side)
+            .set("stock_amount_raw", &sw.stock_amount_raw)
+            .set("quote_amount_raw", &sw.quote_amount_raw)
+            .set("stock_amount", &sw.stock_amount)
+            .set("quote_amount", &sw.quote_amount)
+            .set("multiplier", &sw.multiplier)
+            .set("share_amount", &sw.share_amount)
+            .set("sender", &sw.sender)
+            .set("recipient", &sw.recipient);
+        // USD columns stay NULL unless the quote is native USDC.
+        if !sw.usd_notional.is_empty() {
+            row.set("usd_notional", &sw.usd_notional);
+        }
+        if !sw.usd_price_per_token.is_empty() {
+            row.set("usd_price_per_token", &sw.usd_price_per_token);
+        }
+        if !sw.usd_price_per_share.is_empty() {
+            row.set("usd_price_per_share", &sw.usd_price_per_share);
+        }
+    }
+
+    // Running per-day totals; the store holds the authoritative value, so each
+    // delta is an idempotent upsert (works on Postgres and ClickHouse).
+    for d in &stock_daily.deltas {
+        let mut it = d.key.rsplitn(2, '|');
+        let (Some(metric), Some(rest)) = (it.next(), it.next()) else { continue };
+        let Some((day, ticker)) = rest.split_once('|') else { continue };
+        let col = match metric {
+            "usd" => "volume_usd",
+            "tokens" => "volume_tokens",
+            "shares" => "volume_shares",
+            "count" => "swap_count",
+            "usd_count" => "usd_swap_count",
+            _ => continue,
+        };
+        tables
+            .upsert_row("stock_daily_volume", format!("{}|{}", day, ticker))
+            .set("day", day)
+            .set("ticker", ticker)
+            .set(col, d.new_value.to_string());
+    }
+
+    for ch in &b20.multiplier_changes {
+        let Some(ticker) = stocks::resolve_ticker(&ch.token, &[], &stock_registry) else { continue };
+        let kind = if ch.cancelled { "cancelled" } else if ch.scheduled { "scheduled" } else { "instant" };
+        tables
+            .create_row("stock_corporate_actions", format!("{}:{}", ch.transaction_hash, ch.log_index))
+            .set("ticker", &ticker)
+            .set("token", &ch.token)
+            .set("kind", kind)
+            .set("old_multiplier", nz(&ch.old_multiplier))
+            .set("new_multiplier", if ch.cancelled { nz(&ch.old_multiplier) } else { nz(&ch.new_multiplier) })
+            .set("effective_at", ch.effective_at as i64)
+            .set("block_number", ch.announced_block)
+            .set("timestamp", ch.announced_timestamp as i64)
+            .set("tx_hash", &ch.transaction_hash)
+            .set("log_index", ch.log_index)
+            .set("announcement_id", &ch.announcement_id);
+    }
+    // Beryl-era instant multiplier updates (no UIMultiplierUpdated companion).
+    for ev in b20.events.iter().filter(|e| e.event_type == "multiplier_updated") {
+        let mirrored = b20.multiplier_changes.iter().any(|c| c.transaction_hash == ev.transaction_hash && c.token == ev.token);
+        if mirrored {
+            continue;
+        }
+        let Some(ticker) = stocks::resolve_ticker(&ev.token, &[], &stock_registry) else { continue };
+        tables
+            .create_row("stock_corporate_actions", format!("{}:{}", ev.transaction_hash, ev.log_index))
+            .set("ticker", &ticker)
+            .set("token", &ev.token)
+            .set("kind", "instant_legacy")
+            .set("old_multiplier", "0")
+            .set("new_multiplier", nz(&ev.new_value))
+            .set("effective_at", ev.effective_at as i64)
+            .set("block_number", ev.block_number)
+            .set("timestamp", ev.timestamp as i64)
+            .set("tx_hash", &ev.transaction_hash)
+            .set("log_index", ev.log_index)
+            .set("announcement_id", &ev.announcement_id);
+    }
+
+    // -- v1.0.0: Voter gauges and votes -------------------------------------
+    for g in &gauges.events {
+        match g.event_type.as_str() {
+            "gauge_created" => {
+                tables
+                    .create_row("gauges", &g.gauge)
+                    .set("gauge", &g.gauge)
+                    .set("pool", &g.pool)
+                    .set("pool_factory", &g.pool_factory)
+                    .set("bribe_voting_reward", &g.bribe_voting_reward)
+                    .set("fee_voting_reward", &g.fee_voting_reward)
+                    .set("creator", &g.creator)
+                    .set("created_block", g.block_number)
+                    .set("created_timestamp", g.timestamp as i64);
+            }
+            "gauge_killed" | "gauge_revived" => {
+                // Append-only so ClickHouse (whole-row replace) stays correct.
+                tables
+                    .create_row("gauge_status_changes", format!("{}:{}", g.transaction_hash, g.log_index))
+                    .set("gauge", &g.gauge)
+                    .set("alive", g.event_type == "gauge_revived")
+                    .set("block_number", g.block_number)
+                    .set("timestamp", g.timestamp as i64)
+                    .set("tx_hash", &g.transaction_hash);
+            }
+            _ => {
+                tables
+                    .create_row("gauge_votes", format!("{}:{}", g.transaction_hash, g.log_index))
+                    .set("tx_hash", &g.transaction_hash)
+                    .set("log_index", g.log_index)
+                    .set("block_number", g.block_number)
+                    .set("timestamp", g.timestamp as i64)
+                    .set("action", if g.event_type == "voted" { "vote" } else { "abstain" })
+                    .set("voter", &g.voter)
+                    .set("pool", &g.pool)
+                    .set("token_id", nz(&g.token_id))
+                    .set("weight", nz(&g.weight))
+                    .set("total_weight", nz(&g.total_weight));
+            }
+        }
+    }
+
     Ok(tables.to_database_changes())
+}
+
+/// Empty strings break NUMERIC columns in the SQL sink; send 0 instead.
+fn nz(v: &str) -> &str {
+    if v.is_empty() {
+        "0"
+    } else {
+        v
+    }
 }

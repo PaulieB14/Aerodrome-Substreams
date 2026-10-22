@@ -162,6 +162,9 @@ pub fn store_cl_volumes(swaps: ClSwaps, store: StoreAddBigInt) {
 
         store.add(0, format!("cl:pool:{}:volume", swap.pool_address), &volume);
         store.add(0, format!("cl:pool:{}:count", swap.pool_address), &BigInt::from(1u64));
+        // v1.0.0: token1-side volume too (v0.3.x only tracked amount0).
+        let volume1 = amount(&swap.amount1).absolute();
+        store.add(0, format!("cl:pool:{}:volume1", swap.pool_address), &volume1);
 
         if swap.is_b20 {
             store.add(0, format!("b20:{}:volume", swap.b20_token), &volume);
@@ -173,7 +176,7 @@ pub fn store_cl_volumes(swaps: ClSwaps, store: StoreAddBigInt) {
 }
 
 /// Format Unix timestamp to YYYY-MM-DD date string
-fn format_date(timestamp: u64) -> String {
+pub(crate) fn format_date(timestamp: u64) -> String {
     let days = timestamp / 86400;
     let mut year = 1970u64;
     let mut remaining_days = days;

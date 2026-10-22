@@ -39,7 +39,7 @@ fn pausable_feature_name(feature: u64) -> &'static str {
 fn features_to_string(features: &[substreams::scalar::BigInt]) -> String {
     features
         .iter()
-        .map(|f| pausable_feature_name(f.to_u64()))
+        .map(|f| pausable_feature_name(crate::sat_u64(f)))
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -57,6 +57,11 @@ pub fn map_b20_events(blk: eth::Block) -> Result<B20Events, substreams::errors::
         // Announcement brackets never nest, but several tokens can be announced
         // within one transaction, so the open bracket is tracked per token.
         let mut open_announcements: HashMap<Vec<u8>, String> = HashMap::new();
+        let coinbase_issued = receipt
+            .receipt
+            .logs
+            .iter()
+            .any(|l| l.address == b20::COINBASE_TOKEN_FACTORY);
 
         for log in &receipt.receipt.logs {
             // `B20Created` comes from the factory precompile, not from the token.
@@ -67,13 +72,14 @@ pub fn map_b20_events(blk: eth::Block) -> Result<B20Events, substreams::errors::
                         transaction_hash: tx_hash.clone(),
                         log_index: log.index as u64,
                         token: Hex(&ev.token).to_string(),
-                        variant: b20::variant_name(ev.variant.to_u64() as u8).to_string(),
+                        variant: b20::variant_name(crate::sat_u64(&ev.variant).min(255) as u8).to_string(),
                         event_type: "b20_created".to_string(),
                         timestamp,
                         actor: Hex(&receipt.transaction.from).to_string(),
                         text: ev.symbol.clone(),
                         key: ev.name.clone(),
                         new_value: ev.decimals.to_string(),
+                        coinbase_issued,
                         ..Default::default()
                     });
                 }
@@ -124,7 +130,7 @@ pub fn map_b20_events(blk: eth::Block) -> Result<B20Events, substreams::errors::
                     ..base
                 });
             } else if let Some(ev) = b20_abi::events::UiMultiplierUpdated::match_and_decode(log) {
-                let effective_at = ev.effective_at_timestamp.to_u64();
+                let effective_at = crate::sat_u64(&ev.effective_at_timestamp);
                 multiplier_changes.push(B20MultiplierChange {
                     token: token.clone(),
                     old_multiplier: ev.old_multiplier.to_string(),
@@ -164,7 +170,7 @@ pub fn map_b20_events(blk: eth::Block) -> Result<B20Events, substreams::errors::
                     token: token.clone(),
                     old_multiplier: ev.cancelled_multiplier.to_string(),
                     new_multiplier: String::new(),
-                    effective_at: ev.cancelled_effective_at.to_u64(),
+                    effective_at: crate::sat_u64(&ev.cancelled_effective_at),
                     announced_block: blk.number,
                     announced_timestamp: timestamp,
                     transaction_hash: tx_hash.clone(),
@@ -176,7 +182,7 @@ pub fn map_b20_events(blk: eth::Block) -> Result<B20Events, substreams::errors::
                 events.push(B20Event {
                     event_type: "ui_multiplier_update_cancelled".to_string(),
                     old_value: ev.cancelled_multiplier.to_string(),
-                    effective_at: ev.cancelled_effective_at.to_u64(),
+                    effective_at: crate::sat_u64(&ev.cancelled_effective_at),
                     ..base
                 });
             } else if let Some(ev) = b20_abi::events::SymbolUpdated::match_and_decode(log) {

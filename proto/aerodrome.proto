@@ -36,6 +36,9 @@ message Pool {
   // "asset", "stablecoin" or "unknown"; empty when the pool holds no B20.
   // Coinbase tokenized stocks are the "asset" variant.
   string b20_variant = 16;
+  // v1.0.0: set when the B20 side is a Coinbase-issued tokenized stock.
+  bool is_stock = 17;
+  string stock_ticker = 18;
 }
 
 message Pools {
@@ -236,6 +239,10 @@ message B20Event {
   bool in_announcement = 19;
   // Comma-separated PausableFeature names for pause / unpause.
   string pause_features = 20;
+  // b20_created only: the creating transaction also carries a log from the
+  // Coinbase Tokenized Stocks token factory (0x4ba3e29e...534d, per
+  // GET https://api.coinbase.com/v1/tokenized-stocks/chains), i.e. a Coinbase-issued stock.
+  bool coinbase_issued = 21;
 }
 
 // A multiplier change, which is how splits and reinvested dividends are applied.
@@ -260,4 +267,68 @@ message B20MultiplierChange {
   // True when this row cancels a previously scheduled change.
   bool cancelled = 10;
   string announcement_id = 11;
+}
+
+// ---------------------------------------------------------------------------
+// v1.0.0: Coinbase tokenized stocks (B20 Asset) trading on Aerodrome
+// ---------------------------------------------------------------------------
+
+// A swap in a classic (v2) or Slipstream (cl) pool whose token0 or token1 is a
+// Coinbase-issued tokenized stock.
+message StockSwap {
+  uint64 block_number = 1;
+  string transaction_hash = 2;
+  uint64 log_index = 3;
+  uint64 timestamp = 4;
+  string pool_address = 5;
+  string pool_type = 6;       // v2_volatile | v2_stable | cl
+  string ticker = 7;
+  string stock_token = 8;
+  string quote_token = 9;
+  string quote_symbol = 10;
+  // "buy" = the trader received the stock (pool's stock balance fell), "sell" otherwise.
+  string side = 11;
+  string stock_amount_raw = 12;  // magnitude, raw units
+  string quote_amount_raw = 13;  // magnitude, raw units
+  int32 stock_decimals = 14;
+  int32 quote_decimals = 15;
+  string stock_amount = 16;      // decimalized token amount
+  string quote_amount = 17;      // decimalized
+  // B20 UI multiplier in effect at the block timestamp (WAD, 1e18 = 1.0).
+  string multiplier = 18;
+  // stock_amount * multiplier / 1e18 -- the share-equivalent count.
+  string share_amount = 19;
+  // Set only when the quote token is a USD stablecoin (native USDC).
+  string usd_notional = 20;
+  string usd_price_per_token = 21;
+  string usd_price_per_share = 22;
+  string sender = 23;
+  string recipient = 24;
+}
+
+message StockSwaps {
+  repeated StockSwap swaps = 1;
+}
+
+// Voter gauge lifecycle and votes (aerodrome-finance/contracts IVoter.sol).
+message GaugeEvent {
+  uint64 block_number = 1;
+  string transaction_hash = 2;
+  uint64 log_index = 3;
+  uint64 timestamp = 4;
+  string event_type = 5; // gauge_created | gauge_killed | gauge_revived | voted | abstained
+  string gauge = 6;
+  string pool = 7;
+  string pool_factory = 8;
+  string bribe_voting_reward = 9;
+  string fee_voting_reward = 10;
+  string creator = 11;
+  string voter = 12;
+  string token_id = 13;
+  string weight = 14;
+  string total_weight = 15;
+}
+
+message GaugeEvents {
+  repeated GaugeEvent events = 1;
 }

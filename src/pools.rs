@@ -9,6 +9,7 @@
 use crate::abi::{cl_factory, erc20, factory_registry, pool_factory};
 use crate::b20;
 use crate::pb::aerodrome::{Factories, Factory, Pool, Pools};
+use substreams::store::StoreGetString;
 use substreams::store::{StoreGet, StoreGetInt64, StoreNew, StoreSet, StoreSetInt64};
 use substreams::Hex;
 use substreams_ethereum::pb::eth::v2 as eth;
@@ -189,6 +190,8 @@ fn build(
         token1_decimals,
         token0_symbol,
         token1_symbol,
+        is_stock: false,
+        stock_ticker: String::new(),
     }
 }
 
@@ -199,9 +202,12 @@ fn build(
 /// factory of either kind is therefore handled with no code change.
 #[substreams::handlers::map]
 pub fn map_pools(
+    params: String,
     blk: eth::Block,
     factory_store: StoreGetInt64,
+    stock_registry: StoreGetString,
 ) -> Result<Pools, substreams::errors::Error> {
+    let extra = crate::stocks::parse_extra(&params);
     let timestamp = blk.header.timestamp.seconds as u64;
 
     let mut pools: Vec<Pool> = Vec::new();
@@ -238,6 +244,13 @@ pub fn map_pools(
                     ));
                 }
             }
+        }
+    }
+
+    for pool in pools.iter_mut() {
+        if let Some(t) = crate::stocks::resolve_ticker(&pool.b20_token, &extra, &stock_registry) {
+            pool.is_stock = true;
+            pool.stock_ticker = t;
         }
     }
 
