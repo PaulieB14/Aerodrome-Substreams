@@ -3,6 +3,8 @@ package:
   name: "aerodrome_substreams"
   version: v1.0.0
   description: |
+    Aerodrome DEX on Base: swaps, pools, liquidity, volume, Slipstream + Coinbase tokenized stocks.
+
     Substreams for Aerodrome Finance on Base, covering both the v2 AMM and
     Slipstream concentrated liquidity -- including Coinbase-issued B20 tokenized
     stocks (classic and Slipstream pools): a stock registry, stock swaps with
