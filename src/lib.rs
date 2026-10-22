@@ -572,7 +572,6 @@ pub fn db_out(
             .set("actor", &event.actor)
             .set("account", &event.account)
             .set("recipient", &event.recipient)
-            .set("amount", &event.amount)
             .set("effective_at", event.effective_at as i64)
             .set("key", &event.key)
             .set("text", &event.text)
