@@ -16,6 +16,9 @@ fn main() -> Result<()> {
         ("Erc20", "abi/erc20.json", "src/abi/erc20.rs"),
         ("B20", "abi/b20.json", "src/abi/b20.rs"),
         ("B20Factory", "abi/b20_factory.json", "src/abi/b20_factory.rs"),
+        // Event subset of aerodrome-finance/contracts contracts/interfaces/IVoter.sol
+        // (commit 1ba30815bba620f7e9faa34769ffd00c214c9b82).
+        ("Voter", "abi/voter.json", "src/abi/voter.rs"),
         ("FactoryRegistry", "abi/factory_registry.json", "src/abi/factory_registry.rs"),
     ] {
         Abigen::new(name, abi)?.generate()?.write_to_file(out)?;

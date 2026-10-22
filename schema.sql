@@ -28,8 +28,12 @@ CREATE TABLE IF NOT EXISTS pools (
     token0_decimals   INTEGER NOT NULL DEFAULT -1,
     token1_decimals   INTEGER NOT NULL DEFAULT -1,
     token0_symbol     VARCHAR,
-    token1_symbol     VARCHAR
+    token1_symbol     VARCHAR,
+    -- v1.0.0: B20 side is a Coinbase-issued tokenized stock
+    is_stock          BOOLEAN NOT NULL DEFAULT FALSE,
+    stock_ticker      VARCHAR
 );
+CREATE INDEX IF NOT EXISTS idx_pools_stock   ON pools(stock_ticker) WHERE is_stock;
 
 CREATE INDEX IF NOT EXISTS idx_pools_b20     ON pools(is_b20) WHERE is_b20;
 CREATE INDEX IF NOT EXISTS idx_pools_type    ON pools(pool_type);
@@ -549,3 +553,115 @@ FROM aerodrome_swaps
 WHERE timestamp > EXTRACT(EPOCH FROM NOW())::BIGINT - 86400
 GROUP BY pool_address
 ORDER BY volume DESC;
+
+-- ===========================================================================
+-- v1.0.0: Coinbase tokenized stocks on Aerodrome (classic + Slipstream)
+-- ===========================================================================
+
+-- Issuer-verified stock pools (the older `stock_pools` view trusts a
+-- self-declared ISIN; this one requires a Coinbase-issued token).
+CREATE OR REPLACE VIEW coinbase_stock_pools AS
+SELECT * FROM pools WHERE is_stock;
+
+CREATE TABLE IF NOT EXISTS stock_trades (
+    id                   VARCHAR PRIMARY KEY,
+    tx_hash              VARCHAR NOT NULL,
+    log_index            BIGINT  NOT NULL,
+    block_number         BIGINT  NOT NULL,
+    timestamp            BIGINT  NOT NULL,
+    pool_address         VARCHAR NOT NULL,
+    pool_type            VARCHAR NOT NULL,
+    ticker               VARCHAR NOT NULL,
+    stock_token          VARCHAR NOT NULL,
+    quote_token          VARCHAR NOT NULL,
+    quote_symbol         VARCHAR,
+    side                 VARCHAR NOT NULL,   -- 'buy' | 'sell' (of the stock)
+    stock_amount_raw     NUMERIC NOT NULL,
+    quote_amount_raw     NUMERIC NOT NULL,
+    stock_amount         NUMERIC NOT NULL,
+    quote_amount         NUMERIC NOT NULL,
+    multiplier           NUMERIC NOT NULL,   -- WAD (1e18 = 1.0) at block time
+    share_amount         NUMERIC NOT NULL,   -- stock_amount * multiplier / 1e18
+    usd_notional         NUMERIC,            -- NULL unless quoted in native USDC
+    usd_price_per_token  NUMERIC,
+    usd_price_per_share  NUMERIC,
+    sender               VARCHAR,
+    recipient            VARCHAR
+);
+CREATE INDEX IF NOT EXISTS idx_stock_trades_ticker ON stock_trades(ticker, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_trades_pool   ON stock_trades(pool_address);
+
+CREATE TABLE IF NOT EXISTS stock_daily_volume (
+    id              VARCHAR PRIMARY KEY,  -- 'YYYY-MM-DD|TICKER'
+    day             VARCHAR NOT NULL,
+    ticker          VARCHAR NOT NULL,
+    volume_usd      NUMERIC NOT NULL DEFAULT 0,
+    volume_tokens   NUMERIC NOT NULL DEFAULT 0,
+    volume_shares   NUMERIC NOT NULL DEFAULT 0,
+    swap_count      NUMERIC NOT NULL DEFAULT 0,
+    usd_swap_count  NUMERIC NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_stock_daily_ticker ON stock_daily_volume(ticker, day);
+
+CREATE TABLE IF NOT EXISTS stock_corporate_actions (
+    id               VARCHAR PRIMARY KEY,
+    ticker           VARCHAR NOT NULL,
+    token            VARCHAR NOT NULL,
+    kind             VARCHAR NOT NULL,  -- scheduled | instant | cancelled | instant_legacy
+    old_multiplier   NUMERIC,
+    new_multiplier   NUMERIC,
+    effective_at     BIGINT  NOT NULL,
+    block_number     BIGINT  NOT NULL,
+    timestamp        BIGINT  NOT NULL,
+    tx_hash          VARCHAR NOT NULL,
+    log_index        BIGINT  NOT NULL,
+    announcement_id  VARCHAR
+);
+CREATE INDEX IF NOT EXISTS idx_stock_ca_ticker ON stock_corporate_actions(ticker, effective_at);
+
+-- ===========================================================================
+-- v1.0.0: Voter gauges and votes
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS gauges (
+    id                   VARCHAR PRIMARY KEY,
+    gauge                VARCHAR NOT NULL,
+    pool                 VARCHAR,
+    pool_factory         VARCHAR,
+    bribe_voting_reward  VARCHAR,
+    fee_voting_reward    VARCHAR,
+    creator              VARCHAR,
+    created_block        BIGINT,
+    created_timestamp    BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_gauges_pool ON gauges(pool);
+
+CREATE TABLE IF NOT EXISTS gauge_status_changes (
+    id            VARCHAR PRIMARY KEY,
+    gauge         VARCHAR NOT NULL,
+    alive         BOOLEAN NOT NULL,
+    block_number  BIGINT  NOT NULL,
+    timestamp     BIGINT  NOT NULL,
+    tx_hash       VARCHAR NOT NULL
+);
+
+-- Current gauge status: alive unless the latest status change killed it.
+CREATE OR REPLACE VIEW gauge_current AS
+SELECT g.*, COALESCE((SELECT s.alive FROM gauge_status_changes s WHERE s.gauge = g.gauge
+                      ORDER BY s.block_number DESC, s.id DESC LIMIT 1), TRUE) AS alive
+FROM gauges g;
+
+CREATE TABLE IF NOT EXISTS gauge_votes (
+    id            VARCHAR PRIMARY KEY,
+    tx_hash       VARCHAR NOT NULL,
+    log_index     BIGINT  NOT NULL,
+    block_number  BIGINT  NOT NULL,
+    timestamp     BIGINT  NOT NULL,
+    action        VARCHAR NOT NULL,  -- vote | abstain
+    voter         VARCHAR NOT NULL,
+    pool          VARCHAR NOT NULL,
+    token_id      NUMERIC NOT NULL,
+    weight        NUMERIC NOT NULL,
+    total_weight  NUMERIC NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gauge_votes_pool ON gauge_votes(pool, timestamp DESC);

@@ -10,3 +10,4 @@ pub mod cl_pool;
 pub mod erc20;
 pub mod pool;
 pub mod pool_factory;
+pub mod voter;

@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS pools (
     token0_decimals   Int32,
     token1_decimals   Int32,
     token0_symbol     String,
-    token1_symbol     String
+    token1_symbol     String,
+    is_stock          Bool DEFAULT false,
+    stock_ticker      String DEFAULT ''
 ) ENGINE = ReplacingMergeTree()
 ORDER BY id;
 
@@ -170,6 +172,53 @@ CREATE TABLE IF NOT EXISTS b20_multiplier_schedule (
     announcement_id     String
 ) ENGINE = ReplacingMergeTree()
 ORDER BY (token, effective_at, id);
+
+-- ===========================================================================
+-- v1.0.0: Coinbase tokenized stocks + Voter gauges
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS stock_trades (
+    id String, tx_hash String, log_index UInt64, block_number UInt64, timestamp Int64,
+    pool_address String, pool_type String, ticker String, stock_token String,
+    quote_token String, quote_symbol String, side String,
+    stock_amount_raw String, quote_amount_raw String, stock_amount String, quote_amount String,
+    multiplier String, share_amount String,
+    usd_notional Nullable(String), usd_price_per_token Nullable(String), usd_price_per_share Nullable(String),
+    sender String, recipient String
+) ENGINE = ReplacingMergeTree()
+ORDER BY (ticker, timestamp, id);
+
+CREATE TABLE IF NOT EXISTS stock_daily_volume (
+    id String, day String, ticker String,
+    volume_usd String, volume_tokens String, volume_shares String,
+    swap_count String, usd_swap_count String
+) ENGINE = ReplacingMergeTree()
+ORDER BY (ticker, day, id);
+
+CREATE TABLE IF NOT EXISTS stock_corporate_actions (
+    id String, ticker String, token String, kind String,
+    old_multiplier String, new_multiplier String, effective_at Int64,
+    block_number UInt64, timestamp Int64, tx_hash String, log_index UInt64, announcement_id String
+) ENGINE = ReplacingMergeTree()
+ORDER BY (ticker, effective_at, id);
+
+CREATE TABLE IF NOT EXISTS gauges (
+    id String, gauge String, pool String, pool_factory String,
+    bribe_voting_reward String, fee_voting_reward String, creator String,
+    created_block UInt64, created_timestamp Int64
+) ENGINE = ReplacingMergeTree()
+ORDER BY id;
+
+CREATE TABLE IF NOT EXISTS gauge_status_changes (
+    id String, gauge String, alive Bool, block_number UInt64, timestamp Int64, tx_hash String
+) ENGINE = ReplacingMergeTree()
+ORDER BY (gauge, block_number, id);
+
+CREATE TABLE IF NOT EXISTS gauge_votes (
+    id String, tx_hash String, log_index UInt64, block_number UInt64, timestamp Int64,
+    action String, voter String, pool String, token_id String, weight String, total_weight String
+) ENGINE = ReplacingMergeTree()
+ORDER BY (pool, timestamp, id);
 
 -- ===========================================================================
 -- Views

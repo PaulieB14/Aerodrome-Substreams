@@ -58,6 +58,12 @@ pub struct PoolView<'a> {
     ///
     /// Field 16: `b20_variant`
     pub b20_variant: &'a str,
+    /// v1.0.0: set when the B20 side is a Coinbase-issued tokenized stock.
+    ///
+    /// Field 17: `is_stock`
+    pub is_stock: bool,
+    /// Field 18: `stock_ticker`
+    pub stock_ticker: &'a str,
 }
 impl<'a> ::buffa::MessageView<'a> for PoolView<'a> {
     type Owned = super::super::Pool;
@@ -201,6 +207,20 @@ impl<'a> ::buffa::MessageView<'a> for PoolView<'a> {
                 )?;
                 view.b20_variant = ::buffa::types::borrow_str(&mut cur)?;
             }
+            17u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.is_stock = ::buffa::types::decode_bool(&mut cur)?;
+            }
+            18u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.stock_ticker = ::buffa::types::borrow_str(&mut cur)?;
+            }
             _ => {
                 ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
             }
@@ -237,6 +257,8 @@ impl<'a> ::buffa::MessageView<'a> for PoolView<'a> {
             token0_symbol: self.token0_symbol.to_string(),
             token1_symbol: self.token1_symbol.to_string(),
             b20_variant: self.b20_variant.to_string(),
+            is_stock: self.is_stock,
+            stock_ticker: self.stock_ticker.to_string(),
             ..::core::default::Default::default()
         })
     }
@@ -301,6 +323,12 @@ impl<'a> ::buffa::ViewEncode<'a> for PoolView<'a> {
         if !self.b20_variant.is_empty() {
             size += 2u64 + ::buffa::types::string_encoded_len(&self.b20_variant) as u64;
         }
+        if self.is_stock {
+            size += 2u64 + ::buffa::types::BOOL_ENCODED_LEN as u64;
+        }
+        if !self.stock_ticker.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.stock_ticker) as u64;
+        }
         ::buffa::saturate_size(size)
     }
     #[allow(clippy::needless_borrow)]
@@ -358,6 +386,12 @@ impl<'a> ::buffa::ViewEncode<'a> for PoolView<'a> {
         }
         if !self.b20_variant.is_empty() {
             ::buffa::types::put_string_field(16u32, &self.b20_variant, buf);
+        }
+        if self.is_stock {
+            ::buffa::types::put_bool_field(17u32, self.is_stock, buf);
+        }
+        if !self.stock_ticker.is_empty() {
+            ::buffa::types::put_string_field(18u32, &self.stock_ticker, buf);
         }
     }
 }
@@ -538,6 +572,18 @@ impl PoolOwnedView {
     #[must_use]
     pub fn b20_variant(&self) -> &'_ str {
         self.0.reborrow().b20_variant
+    }
+    /// v1.0.0: set when the B20 side is a Coinbase-issued tokenized stock.
+    ///
+    /// Field 17: `is_stock`
+    #[must_use]
+    pub fn is_stock(&self) -> bool {
+        self.0.reborrow().is_stock
+    }
+    /// Field 18: `stock_ticker`
+    #[must_use]
+    pub fn stock_ticker(&self) -> &'_ str {
+        self.0.reborrow().stock_ticker
     }
 }
 impl ::core::convert::From<::buffa::OwnedView<PoolView<'static>>> for PoolOwnedView {
@@ -5612,6 +5658,12 @@ pub struct B20EventView<'a> {
     ///
     /// Field 20: `pause_features`
     pub pause_features: &'a str,
+    /// b20_created only: the creating transaction also carries a log from the
+    /// Coinbase Tokenized Stocks token factory (0x4ba3e29e...534d, per
+    /// GET <https://api.coinbase.com/v1/tokenized-stocks/chains>), i.e. a Coinbase-issued stock.
+    ///
+    /// Field 21: `coinbase_issued`
+    pub coinbase_issued: bool,
 }
 impl<'a> ::buffa::MessageView<'a> for B20EventView<'a> {
     type Owned = super::super::B20Event;
@@ -5783,6 +5835,13 @@ impl<'a> ::buffa::MessageView<'a> for B20EventView<'a> {
                 )?;
                 view.pause_features = ::buffa::types::borrow_str(&mut cur)?;
             }
+            21u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.coinbase_issued = ::buffa::types::decode_bool(&mut cur)?;
+            }
             _ => {
                 ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
             }
@@ -5823,6 +5882,7 @@ impl<'a> ::buffa::MessageView<'a> for B20EventView<'a> {
             uri: self.uri.to_string(),
             in_announcement: self.in_announcement,
             pause_features: self.pause_features.to_string(),
+            coinbase_issued: self.coinbase_issued,
             ..::core::default::Default::default()
         })
     }
@@ -5899,6 +5959,9 @@ impl<'a> ::buffa::ViewEncode<'a> for B20EventView<'a> {
                 += 2u64
                     + ::buffa::types::string_encoded_len(&self.pause_features) as u64;
         }
+        if self.coinbase_issued {
+            size += 2u64 + ::buffa::types::BOOL_ENCODED_LEN as u64;
+        }
         ::buffa::saturate_size(size)
     }
     #[allow(clippy::needless_borrow)]
@@ -5968,6 +6031,9 @@ impl<'a> ::buffa::ViewEncode<'a> for B20EventView<'a> {
         }
         if !self.pause_features.is_empty() {
             ::buffa::types::put_string_field(20u32, &self.pause_features, buf);
+        }
+        if self.coinbase_issued {
+            ::buffa::types::put_bool_field(21u32, self.coinbase_issued, buf);
         }
     }
 }
@@ -6174,6 +6240,15 @@ impl B20EventOwnedView {
     #[must_use]
     pub fn pause_features(&self) -> &'_ str {
         self.0.reborrow().pause_features
+    }
+    /// b20_created only: the creating transaction also carries a log from the
+    /// Coinbase Tokenized Stocks token factory (0x4ba3e29e...534d, per
+    /// GET <https://api.coinbase.com/v1/tokenized-stocks/chains>), i.e. a Coinbase-issued stock.
+    ///
+    /// Field 21: `coinbase_issued`
+    #[must_use]
+    pub fn coinbase_issued(&self) -> bool {
+        self.0.reborrow().coinbase_issued
     }
 }
 impl ::core::convert::From<::buffa::OwnedView<B20EventView<'static>>>
@@ -6657,4 +6732,1732 @@ for B20MultiplierChangeOwnedView {
 impl ::buffa::HasMessageView for super::super::B20MultiplierChange {
     type View<'a> = B20MultiplierChangeView<'a>;
     type ViewHandle = B20MultiplierChangeOwnedView;
+}
+/// ---------------------------------------------------------------------------
+/// v1.0.0: Coinbase tokenized stocks (B20 Asset) trading on Aerodrome
+/// ---------------------------------------------------------------------------
+///
+/// A swap in a classic (v2) or Slipstream (cl) pool whose token0 or token1 is a
+/// Coinbase-issued tokenized stock.
+#[derive(Clone, Debug, Default)]
+pub struct StockSwapView<'a> {
+    /// Field 1: `block_number`
+    pub block_number: u64,
+    /// Field 2: `transaction_hash`
+    pub transaction_hash: &'a str,
+    /// Field 3: `log_index`
+    pub log_index: u64,
+    /// Field 4: `timestamp`
+    pub timestamp: u64,
+    /// Field 5: `pool_address`
+    pub pool_address: &'a str,
+    /// v2_volatile | v2_stable | cl
+    ///
+    /// Field 6: `pool_type`
+    pub pool_type: &'a str,
+    /// Field 7: `ticker`
+    pub ticker: &'a str,
+    /// Field 8: `stock_token`
+    pub stock_token: &'a str,
+    /// Field 9: `quote_token`
+    pub quote_token: &'a str,
+    /// Field 10: `quote_symbol`
+    pub quote_symbol: &'a str,
+    /// "buy" = the trader received the stock (pool's stock balance fell), "sell" otherwise.
+    ///
+    /// Field 11: `side`
+    pub side: &'a str,
+    /// magnitude, raw units
+    ///
+    /// Field 12: `stock_amount_raw`
+    pub stock_amount_raw: &'a str,
+    /// magnitude, raw units
+    ///
+    /// Field 13: `quote_amount_raw`
+    pub quote_amount_raw: &'a str,
+    /// Field 14: `stock_decimals`
+    pub stock_decimals: i32,
+    /// Field 15: `quote_decimals`
+    pub quote_decimals: i32,
+    /// decimalized token amount
+    ///
+    /// Field 16: `stock_amount`
+    pub stock_amount: &'a str,
+    /// decimalized
+    ///
+    /// Field 17: `quote_amount`
+    pub quote_amount: &'a str,
+    /// B20 UI multiplier in effect at the block timestamp (WAD, 1e18 = 1.0).
+    ///
+    /// Field 18: `multiplier`
+    pub multiplier: &'a str,
+    /// stock_amount * multiplier / 1e18 -- the share-equivalent count.
+    ///
+    /// Field 19: `share_amount`
+    pub share_amount: &'a str,
+    /// Set only when the quote token is a USD stablecoin (native USDC).
+    ///
+    /// Field 20: `usd_notional`
+    pub usd_notional: &'a str,
+    /// Field 21: `usd_price_per_token`
+    pub usd_price_per_token: &'a str,
+    /// Field 22: `usd_price_per_share`
+    pub usd_price_per_share: &'a str,
+    /// Field 23: `sender`
+    pub sender: &'a str,
+    /// Field 24: `recipient`
+    pub recipient: &'a str,
+}
+impl<'a> ::buffa::MessageView<'a> for StockSwapView<'a> {
+    type Owned = super::super::StockSwap;
+    fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let __elem = ::core::cell::Cell::new(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+        <Self as ::buffa::MessageView>::decode_view_ctx(
+            buf,
+            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit)
+                .with_element_memory(&__elem),
+        )
+    }
+    fn decode_view_with_ctx(
+        buf: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
+    }
+    #[inline]
+    fn merge_view_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        cur: &'a [u8],
+        _before_tag: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<&'a [u8], ::buffa::DecodeError> {
+        let _ = ctx;
+        #[allow(unused_variables)]
+        let view = self;
+        let mut cur = cur;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.block_number = ::buffa::types::decode_uint64(&mut cur)?;
+            }
+            2u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.transaction_hash = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            3u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.log_index = ::buffa::types::decode_uint64(&mut cur)?;
+            }
+            4u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.timestamp = ::buffa::types::decode_uint64(&mut cur)?;
+            }
+            5u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.pool_address = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            6u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.pool_type = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            7u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.ticker = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            8u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.stock_token = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            9u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.quote_token = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            10u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.quote_symbol = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            11u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.side = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            12u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.stock_amount_raw = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            13u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.quote_amount_raw = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            14u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.stock_decimals = ::buffa::types::decode_int32(&mut cur)?;
+            }
+            15u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.quote_decimals = ::buffa::types::decode_int32(&mut cur)?;
+            }
+            16u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.stock_amount = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            17u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.quote_amount = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            18u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.multiplier = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            19u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.share_amount = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            20u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.usd_notional = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            21u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.usd_price_per_token = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            22u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.usd_price_per_share = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            23u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.sender = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            24u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.recipient = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(cur)
+    }
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::StockSwap, ::buffa::DecodeError> {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> ::core::result::Result<super::super::StockSwap, ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
+        ::core::result::Result::Ok(super::super::StockSwap {
+            block_number: self.block_number,
+            transaction_hash: self.transaction_hash.to_string(),
+            log_index: self.log_index,
+            timestamp: self.timestamp,
+            pool_address: self.pool_address.to_string(),
+            pool_type: self.pool_type.to_string(),
+            ticker: self.ticker.to_string(),
+            stock_token: self.stock_token.to_string(),
+            quote_token: self.quote_token.to_string(),
+            quote_symbol: self.quote_symbol.to_string(),
+            side: self.side.to_string(),
+            stock_amount_raw: self.stock_amount_raw.to_string(),
+            quote_amount_raw: self.quote_amount_raw.to_string(),
+            stock_decimals: self.stock_decimals,
+            quote_decimals: self.quote_decimals,
+            stock_amount: self.stock_amount.to_string(),
+            quote_amount: self.quote_amount.to_string(),
+            multiplier: self.multiplier.to_string(),
+            share_amount: self.share_amount.to_string(),
+            usd_notional: self.usd_notional.to_string(),
+            usd_price_per_token: self.usd_price_per_token.to_string(),
+            usd_price_per_share: self.usd_price_per_share.to_string(),
+            sender: self.sender.to_string(),
+            recipient: self.recipient.to_string(),
+            ..::core::default::Default::default()
+        })
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for StockSwapView<'a> {
+    #[allow(clippy::needless_borrow, clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        if self.block_number != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.block_number) as u64;
+        }
+        if !self.transaction_hash.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.transaction_hash) as u64;
+        }
+        if self.log_index != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.log_index) as u64;
+        }
+        if self.timestamp != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.timestamp) as u64;
+        }
+        if !self.pool_address.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool_address) as u64;
+        }
+        if !self.pool_type.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool_type) as u64;
+        }
+        if !self.ticker.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.ticker) as u64;
+        }
+        if !self.stock_token.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.stock_token) as u64;
+        }
+        if !self.quote_token.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.quote_token) as u64;
+        }
+        if !self.quote_symbol.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.quote_symbol) as u64;
+        }
+        if !self.side.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.side) as u64;
+        }
+        if !self.stock_amount_raw.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.stock_amount_raw) as u64;
+        }
+        if !self.quote_amount_raw.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.quote_amount_raw) as u64;
+        }
+        if self.stock_decimals != 0i32 {
+            size += 1u64 + ::buffa::types::int32_encoded_len(self.stock_decimals) as u64;
+        }
+        if self.quote_decimals != 0i32 {
+            size += 1u64 + ::buffa::types::int32_encoded_len(self.quote_decimals) as u64;
+        }
+        if !self.stock_amount.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.stock_amount) as u64;
+        }
+        if !self.quote_amount.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.quote_amount) as u64;
+        }
+        if !self.multiplier.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.multiplier) as u64;
+        }
+        if !self.share_amount.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.share_amount) as u64;
+        }
+        if !self.usd_notional.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.usd_notional) as u64;
+        }
+        if !self.usd_price_per_token.is_empty() {
+            size
+                += 2u64
+                    + ::buffa::types::string_encoded_len(&self.usd_price_per_token)
+                        as u64;
+        }
+        if !self.usd_price_per_share.is_empty() {
+            size
+                += 2u64
+                    + ::buffa::types::string_encoded_len(&self.usd_price_per_share)
+                        as u64;
+        }
+        if !self.sender.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.sender) as u64;
+        }
+        if !self.recipient.is_empty() {
+            size += 2u64 + ::buffa::types::string_encoded_len(&self.recipient) as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(
+        &self,
+        _cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.block_number != 0u64 {
+            ::buffa::types::put_uint64_field(1u32, self.block_number, buf);
+        }
+        if !self.transaction_hash.is_empty() {
+            ::buffa::types::put_string_field(2u32, &self.transaction_hash, buf);
+        }
+        if self.log_index != 0u64 {
+            ::buffa::types::put_uint64_field(3u32, self.log_index, buf);
+        }
+        if self.timestamp != 0u64 {
+            ::buffa::types::put_uint64_field(4u32, self.timestamp, buf);
+        }
+        if !self.pool_address.is_empty() {
+            ::buffa::types::put_string_field(5u32, &self.pool_address, buf);
+        }
+        if !self.pool_type.is_empty() {
+            ::buffa::types::put_string_field(6u32, &self.pool_type, buf);
+        }
+        if !self.ticker.is_empty() {
+            ::buffa::types::put_string_field(7u32, &self.ticker, buf);
+        }
+        if !self.stock_token.is_empty() {
+            ::buffa::types::put_string_field(8u32, &self.stock_token, buf);
+        }
+        if !self.quote_token.is_empty() {
+            ::buffa::types::put_string_field(9u32, &self.quote_token, buf);
+        }
+        if !self.quote_symbol.is_empty() {
+            ::buffa::types::put_string_field(10u32, &self.quote_symbol, buf);
+        }
+        if !self.side.is_empty() {
+            ::buffa::types::put_string_field(11u32, &self.side, buf);
+        }
+        if !self.stock_amount_raw.is_empty() {
+            ::buffa::types::put_string_field(12u32, &self.stock_amount_raw, buf);
+        }
+        if !self.quote_amount_raw.is_empty() {
+            ::buffa::types::put_string_field(13u32, &self.quote_amount_raw, buf);
+        }
+        if self.stock_decimals != 0i32 {
+            ::buffa::types::put_int32_field(14u32, self.stock_decimals, buf);
+        }
+        if self.quote_decimals != 0i32 {
+            ::buffa::types::put_int32_field(15u32, self.quote_decimals, buf);
+        }
+        if !self.stock_amount.is_empty() {
+            ::buffa::types::put_string_field(16u32, &self.stock_amount, buf);
+        }
+        if !self.quote_amount.is_empty() {
+            ::buffa::types::put_string_field(17u32, &self.quote_amount, buf);
+        }
+        if !self.multiplier.is_empty() {
+            ::buffa::types::put_string_field(18u32, &self.multiplier, buf);
+        }
+        if !self.share_amount.is_empty() {
+            ::buffa::types::put_string_field(19u32, &self.share_amount, buf);
+        }
+        if !self.usd_notional.is_empty() {
+            ::buffa::types::put_string_field(20u32, &self.usd_notional, buf);
+        }
+        if !self.usd_price_per_token.is_empty() {
+            ::buffa::types::put_string_field(21u32, &self.usd_price_per_token, buf);
+        }
+        if !self.usd_price_per_share.is_empty() {
+            ::buffa::types::put_string_field(22u32, &self.usd_price_per_share, buf);
+        }
+        if !self.sender.is_empty() {
+            ::buffa::types::put_string_field(23u32, &self.sender, buf);
+        }
+        if !self.recipient.is_empty() {
+            ::buffa::types::put_string_field(24u32, &self.recipient, buf);
+        }
+    }
+}
+impl<'a> ::buffa::MessageName for StockSwapView<'a> {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "StockSwap";
+    const FULL_NAME: &'static str = "aerodrome.StockSwap";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.StockSwap";
+}
+::buffa::impl_default_view_instance!(StockSwapView);
+::buffa::impl_view_reborrow!(StockSwapView);
+/** Self-contained, `'static` owned view of a `StockSwap` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`StockSwapView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`StockSwapView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct StockSwapOwnedView(::buffa::OwnedView<StockSwapView<'static>>);
+impl StockSwapOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            StockSwapOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            StockSwapOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::StockSwap,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            StockSwapOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`StockSwapView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &StockSwapView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    ///
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::StockSwap {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `block_number`
+    #[must_use]
+    pub fn block_number(&self) -> u64 {
+        self.0.reborrow().block_number
+    }
+    /// Field 2: `transaction_hash`
+    #[must_use]
+    pub fn transaction_hash(&self) -> &'_ str {
+        self.0.reborrow().transaction_hash
+    }
+    /// Field 3: `log_index`
+    #[must_use]
+    pub fn log_index(&self) -> u64 {
+        self.0.reborrow().log_index
+    }
+    /// Field 4: `timestamp`
+    #[must_use]
+    pub fn timestamp(&self) -> u64 {
+        self.0.reborrow().timestamp
+    }
+    /// Field 5: `pool_address`
+    #[must_use]
+    pub fn pool_address(&self) -> &'_ str {
+        self.0.reborrow().pool_address
+    }
+    /// v2_volatile | v2_stable | cl
+    ///
+    /// Field 6: `pool_type`
+    #[must_use]
+    pub fn pool_type(&self) -> &'_ str {
+        self.0.reborrow().pool_type
+    }
+    /// Field 7: `ticker`
+    #[must_use]
+    pub fn ticker(&self) -> &'_ str {
+        self.0.reborrow().ticker
+    }
+    /// Field 8: `stock_token`
+    #[must_use]
+    pub fn stock_token(&self) -> &'_ str {
+        self.0.reborrow().stock_token
+    }
+    /// Field 9: `quote_token`
+    #[must_use]
+    pub fn quote_token(&self) -> &'_ str {
+        self.0.reborrow().quote_token
+    }
+    /// Field 10: `quote_symbol`
+    #[must_use]
+    pub fn quote_symbol(&self) -> &'_ str {
+        self.0.reborrow().quote_symbol
+    }
+    /// "buy" = the trader received the stock (pool's stock balance fell), "sell" otherwise.
+    ///
+    /// Field 11: `side`
+    #[must_use]
+    pub fn side(&self) -> &'_ str {
+        self.0.reborrow().side
+    }
+    /// magnitude, raw units
+    ///
+    /// Field 12: `stock_amount_raw`
+    #[must_use]
+    pub fn stock_amount_raw(&self) -> &'_ str {
+        self.0.reborrow().stock_amount_raw
+    }
+    /// magnitude, raw units
+    ///
+    /// Field 13: `quote_amount_raw`
+    #[must_use]
+    pub fn quote_amount_raw(&self) -> &'_ str {
+        self.0.reborrow().quote_amount_raw
+    }
+    /// Field 14: `stock_decimals`
+    #[must_use]
+    pub fn stock_decimals(&self) -> i32 {
+        self.0.reborrow().stock_decimals
+    }
+    /// Field 15: `quote_decimals`
+    #[must_use]
+    pub fn quote_decimals(&self) -> i32 {
+        self.0.reborrow().quote_decimals
+    }
+    /// decimalized token amount
+    ///
+    /// Field 16: `stock_amount`
+    #[must_use]
+    pub fn stock_amount(&self) -> &'_ str {
+        self.0.reborrow().stock_amount
+    }
+    /// decimalized
+    ///
+    /// Field 17: `quote_amount`
+    #[must_use]
+    pub fn quote_amount(&self) -> &'_ str {
+        self.0.reborrow().quote_amount
+    }
+    /// B20 UI multiplier in effect at the block timestamp (WAD, 1e18 = 1.0).
+    ///
+    /// Field 18: `multiplier`
+    #[must_use]
+    pub fn multiplier(&self) -> &'_ str {
+        self.0.reborrow().multiplier
+    }
+    /// stock_amount * multiplier / 1e18 -- the share-equivalent count.
+    ///
+    /// Field 19: `share_amount`
+    #[must_use]
+    pub fn share_amount(&self) -> &'_ str {
+        self.0.reborrow().share_amount
+    }
+    /// Set only when the quote token is a USD stablecoin (native USDC).
+    ///
+    /// Field 20: `usd_notional`
+    #[must_use]
+    pub fn usd_notional(&self) -> &'_ str {
+        self.0.reborrow().usd_notional
+    }
+    /// Field 21: `usd_price_per_token`
+    #[must_use]
+    pub fn usd_price_per_token(&self) -> &'_ str {
+        self.0.reborrow().usd_price_per_token
+    }
+    /// Field 22: `usd_price_per_share`
+    #[must_use]
+    pub fn usd_price_per_share(&self) -> &'_ str {
+        self.0.reborrow().usd_price_per_share
+    }
+    /// Field 23: `sender`
+    #[must_use]
+    pub fn sender(&self) -> &'_ str {
+        self.0.reborrow().sender
+    }
+    /// Field 24: `recipient`
+    #[must_use]
+    pub fn recipient(&self) -> &'_ str {
+        self.0.reborrow().recipient
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<StockSwapView<'static>>>
+for StockSwapOwnedView {
+    fn from(inner: ::buffa::OwnedView<StockSwapView<'static>>) -> Self {
+        StockSwapOwnedView(inner)
+    }
+}
+impl ::core::convert::From<StockSwapOwnedView>
+for ::buffa::OwnedView<StockSwapView<'static>> {
+    fn from(wrapper: StockSwapOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<StockSwapView<'static>>>
+for StockSwapOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<StockSwapView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::StockSwap {
+    type View<'a> = StockSwapView<'a>;
+    type ViewHandle = StockSwapOwnedView;
+}
+#[derive(Clone, Debug, Default)]
+pub struct StockSwapsView<'a> {
+    /// Field 1: `swaps`
+    pub swaps: ::buffa::RepeatedView<'a, super::super::__buffa::view::StockSwapView<'a>>,
+}
+impl<'a> ::buffa::MessageView<'a> for StockSwapsView<'a> {
+    type Owned = super::super::StockSwaps;
+    fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let __elem = ::core::cell::Cell::new(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+        <Self as ::buffa::MessageView>::decode_view_ctx(
+            buf,
+            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit)
+                .with_element_memory(&__elem),
+        )
+    }
+    fn decode_view_with_ctx(
+        buf: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
+    }
+    #[inline]
+    fn merge_view_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        cur: &'a [u8],
+        _before_tag: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<&'a [u8], ::buffa::DecodeError> {
+        let _ = ctx;
+        #[allow(unused_variables)]
+        let view = self;
+        let mut cur = cur;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                let __sub_ctx = ctx.descend()?;
+                let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                ctx.register_element_memory(
+                    ::core::mem::size_of::<super::super::__buffa::view::StockSwapView>(),
+                )?;
+                view.swaps
+                    .push(
+                        <super::super::__buffa::view::StockSwapView as ::buffa::MessageView>::decode_view_ctx(
+                            sub,
+                            __sub_ctx,
+                        )?,
+                    );
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(cur)
+    }
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::StockSwaps, ::buffa::DecodeError> {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> ::core::result::Result<super::super::StockSwaps, ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
+        ::core::result::Result::Ok(super::super::StockSwaps {
+            swaps: self
+                .swaps
+                .iter()
+                .map(|v| v.to_owned_from_source(__buffa_src))
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            ..::core::default::Default::default()
+        })
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for StockSwapsView<'a> {
+    #[allow(clippy::needless_borrow, clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        for v in &self.swaps {
+            let __slot = __cache.reserve();
+            let inner_size = v.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size
+                += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.swaps {
+            ::buffa::types::put_len_delimited_header(
+                1u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
+            v.write_to(__cache, buf);
+        }
+    }
+}
+impl<'a> ::buffa::MessageName for StockSwapsView<'a> {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "StockSwaps";
+    const FULL_NAME: &'static str = "aerodrome.StockSwaps";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.StockSwaps";
+}
+::buffa::impl_default_view_instance!(StockSwapsView);
+::buffa::impl_view_reborrow!(StockSwapsView);
+/** Self-contained, `'static` owned view of a `StockSwaps` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`StockSwapsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`StockSwapsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct StockSwapsOwnedView(::buffa::OwnedView<StockSwapsView<'static>>);
+impl StockSwapsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            StockSwapsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            StockSwapsOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::StockSwaps,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            StockSwapsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`StockSwapsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &StockSwapsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    ///
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::StockSwaps {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `swaps`
+    #[must_use]
+    pub fn swaps(
+        &self,
+    ) -> &::buffa::RepeatedView<'_, super::super::__buffa::view::StockSwapView<'_>> {
+        &self.0.reborrow().swaps
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<StockSwapsView<'static>>>
+for StockSwapsOwnedView {
+    fn from(inner: ::buffa::OwnedView<StockSwapsView<'static>>) -> Self {
+        StockSwapsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<StockSwapsOwnedView>
+for ::buffa::OwnedView<StockSwapsView<'static>> {
+    fn from(wrapper: StockSwapsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<StockSwapsView<'static>>>
+for StockSwapsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<StockSwapsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::StockSwaps {
+    type View<'a> = StockSwapsView<'a>;
+    type ViewHandle = StockSwapsOwnedView;
+}
+/// Voter gauge lifecycle and votes (aerodrome-finance/contracts IVoter.sol).
+#[derive(Clone, Debug, Default)]
+pub struct GaugeEventView<'a> {
+    /// Field 1: `block_number`
+    pub block_number: u64,
+    /// Field 2: `transaction_hash`
+    pub transaction_hash: &'a str,
+    /// Field 3: `log_index`
+    pub log_index: u64,
+    /// Field 4: `timestamp`
+    pub timestamp: u64,
+    /// gauge_created | gauge_killed | gauge_revived | voted | abstained
+    ///
+    /// Field 5: `event_type`
+    pub event_type: &'a str,
+    /// Field 6: `gauge`
+    pub gauge: &'a str,
+    /// Field 7: `pool`
+    pub pool: &'a str,
+    /// Field 8: `pool_factory`
+    pub pool_factory: &'a str,
+    /// Field 9: `bribe_voting_reward`
+    pub bribe_voting_reward: &'a str,
+    /// Field 10: `fee_voting_reward`
+    pub fee_voting_reward: &'a str,
+    /// Field 11: `creator`
+    pub creator: &'a str,
+    /// Field 12: `voter`
+    pub voter: &'a str,
+    /// Field 13: `token_id`
+    pub token_id: &'a str,
+    /// Field 14: `weight`
+    pub weight: &'a str,
+    /// Field 15: `total_weight`
+    pub total_weight: &'a str,
+}
+impl<'a> ::buffa::MessageView<'a> for GaugeEventView<'a> {
+    type Owned = super::super::GaugeEvent;
+    fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let __elem = ::core::cell::Cell::new(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+        <Self as ::buffa::MessageView>::decode_view_ctx(
+            buf,
+            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit)
+                .with_element_memory(&__elem),
+        )
+    }
+    fn decode_view_with_ctx(
+        buf: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
+    }
+    #[inline]
+    fn merge_view_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        cur: &'a [u8],
+        _before_tag: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<&'a [u8], ::buffa::DecodeError> {
+        let _ = ctx;
+        #[allow(unused_variables)]
+        let view = self;
+        let mut cur = cur;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.block_number = ::buffa::types::decode_uint64(&mut cur)?;
+            }
+            2u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.transaction_hash = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            3u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.log_index = ::buffa::types::decode_uint64(&mut cur)?;
+            }
+            4u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
+                view.timestamp = ::buffa::types::decode_uint64(&mut cur)?;
+            }
+            5u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.event_type = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            6u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.gauge = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            7u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.pool = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            8u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.pool_factory = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            9u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.bribe_voting_reward = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            10u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.fee_voting_reward = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            11u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.creator = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            12u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.voter = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            13u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.token_id = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            14u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.weight = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            15u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.total_weight = ::buffa::types::borrow_str(&mut cur)?;
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(cur)
+    }
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::GaugeEvent, ::buffa::DecodeError> {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> ::core::result::Result<super::super::GaugeEvent, ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
+        ::core::result::Result::Ok(super::super::GaugeEvent {
+            block_number: self.block_number,
+            transaction_hash: self.transaction_hash.to_string(),
+            log_index: self.log_index,
+            timestamp: self.timestamp,
+            event_type: self.event_type.to_string(),
+            gauge: self.gauge.to_string(),
+            pool: self.pool.to_string(),
+            pool_factory: self.pool_factory.to_string(),
+            bribe_voting_reward: self.bribe_voting_reward.to_string(),
+            fee_voting_reward: self.fee_voting_reward.to_string(),
+            creator: self.creator.to_string(),
+            voter: self.voter.to_string(),
+            token_id: self.token_id.to_string(),
+            weight: self.weight.to_string(),
+            total_weight: self.total_weight.to_string(),
+            ..::core::default::Default::default()
+        })
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for GaugeEventView<'a> {
+    #[allow(clippy::needless_borrow, clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        if self.block_number != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.block_number) as u64;
+        }
+        if !self.transaction_hash.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.transaction_hash) as u64;
+        }
+        if self.log_index != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.log_index) as u64;
+        }
+        if self.timestamp != 0u64 {
+            size += 1u64 + ::buffa::types::uint64_encoded_len(self.timestamp) as u64;
+        }
+        if !self.event_type.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.event_type) as u64;
+        }
+        if !self.gauge.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.gauge) as u64;
+        }
+        if !self.pool.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool) as u64;
+        }
+        if !self.pool_factory.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.pool_factory) as u64;
+        }
+        if !self.bribe_voting_reward.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.bribe_voting_reward)
+                        as u64;
+        }
+        if !self.fee_voting_reward.is_empty() {
+            size
+                += 1u64
+                    + ::buffa::types::string_encoded_len(&self.fee_voting_reward) as u64;
+        }
+        if !self.creator.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.creator) as u64;
+        }
+        if !self.voter.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.voter) as u64;
+        }
+        if !self.token_id.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.token_id) as u64;
+        }
+        if !self.weight.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.weight) as u64;
+        }
+        if !self.total_weight.is_empty() {
+            size += 1u64 + ::buffa::types::string_encoded_len(&self.total_weight) as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(
+        &self,
+        _cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.block_number != 0u64 {
+            ::buffa::types::put_uint64_field(1u32, self.block_number, buf);
+        }
+        if !self.transaction_hash.is_empty() {
+            ::buffa::types::put_string_field(2u32, &self.transaction_hash, buf);
+        }
+        if self.log_index != 0u64 {
+            ::buffa::types::put_uint64_field(3u32, self.log_index, buf);
+        }
+        if self.timestamp != 0u64 {
+            ::buffa::types::put_uint64_field(4u32, self.timestamp, buf);
+        }
+        if !self.event_type.is_empty() {
+            ::buffa::types::put_string_field(5u32, &self.event_type, buf);
+        }
+        if !self.gauge.is_empty() {
+            ::buffa::types::put_string_field(6u32, &self.gauge, buf);
+        }
+        if !self.pool.is_empty() {
+            ::buffa::types::put_string_field(7u32, &self.pool, buf);
+        }
+        if !self.pool_factory.is_empty() {
+            ::buffa::types::put_string_field(8u32, &self.pool_factory, buf);
+        }
+        if !self.bribe_voting_reward.is_empty() {
+            ::buffa::types::put_string_field(9u32, &self.bribe_voting_reward, buf);
+        }
+        if !self.fee_voting_reward.is_empty() {
+            ::buffa::types::put_string_field(10u32, &self.fee_voting_reward, buf);
+        }
+        if !self.creator.is_empty() {
+            ::buffa::types::put_string_field(11u32, &self.creator, buf);
+        }
+        if !self.voter.is_empty() {
+            ::buffa::types::put_string_field(12u32, &self.voter, buf);
+        }
+        if !self.token_id.is_empty() {
+            ::buffa::types::put_string_field(13u32, &self.token_id, buf);
+        }
+        if !self.weight.is_empty() {
+            ::buffa::types::put_string_field(14u32, &self.weight, buf);
+        }
+        if !self.total_weight.is_empty() {
+            ::buffa::types::put_string_field(15u32, &self.total_weight, buf);
+        }
+    }
+}
+impl<'a> ::buffa::MessageName for GaugeEventView<'a> {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "GaugeEvent";
+    const FULL_NAME: &'static str = "aerodrome.GaugeEvent";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.GaugeEvent";
+}
+::buffa::impl_default_view_instance!(GaugeEventView);
+::buffa::impl_view_reborrow!(GaugeEventView);
+/** Self-contained, `'static` owned view of a `GaugeEvent` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`GaugeEventView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`GaugeEventView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct GaugeEventOwnedView(::buffa::OwnedView<GaugeEventView<'static>>);
+impl GaugeEventOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GaugeEventOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GaugeEventOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::GaugeEvent,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GaugeEventOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`GaugeEventView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &GaugeEventView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    ///
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::GaugeEvent {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `block_number`
+    #[must_use]
+    pub fn block_number(&self) -> u64 {
+        self.0.reborrow().block_number
+    }
+    /// Field 2: `transaction_hash`
+    #[must_use]
+    pub fn transaction_hash(&self) -> &'_ str {
+        self.0.reborrow().transaction_hash
+    }
+    /// Field 3: `log_index`
+    #[must_use]
+    pub fn log_index(&self) -> u64 {
+        self.0.reborrow().log_index
+    }
+    /// Field 4: `timestamp`
+    #[must_use]
+    pub fn timestamp(&self) -> u64 {
+        self.0.reborrow().timestamp
+    }
+    /// gauge_created | gauge_killed | gauge_revived | voted | abstained
+    ///
+    /// Field 5: `event_type`
+    #[must_use]
+    pub fn event_type(&self) -> &'_ str {
+        self.0.reborrow().event_type
+    }
+    /// Field 6: `gauge`
+    #[must_use]
+    pub fn gauge(&self) -> &'_ str {
+        self.0.reborrow().gauge
+    }
+    /// Field 7: `pool`
+    #[must_use]
+    pub fn pool(&self) -> &'_ str {
+        self.0.reborrow().pool
+    }
+    /// Field 8: `pool_factory`
+    #[must_use]
+    pub fn pool_factory(&self) -> &'_ str {
+        self.0.reborrow().pool_factory
+    }
+    /// Field 9: `bribe_voting_reward`
+    #[must_use]
+    pub fn bribe_voting_reward(&self) -> &'_ str {
+        self.0.reborrow().bribe_voting_reward
+    }
+    /// Field 10: `fee_voting_reward`
+    #[must_use]
+    pub fn fee_voting_reward(&self) -> &'_ str {
+        self.0.reborrow().fee_voting_reward
+    }
+    /// Field 11: `creator`
+    #[must_use]
+    pub fn creator(&self) -> &'_ str {
+        self.0.reborrow().creator
+    }
+    /// Field 12: `voter`
+    #[must_use]
+    pub fn voter(&self) -> &'_ str {
+        self.0.reborrow().voter
+    }
+    /// Field 13: `token_id`
+    #[must_use]
+    pub fn token_id(&self) -> &'_ str {
+        self.0.reborrow().token_id
+    }
+    /// Field 14: `weight`
+    #[must_use]
+    pub fn weight(&self) -> &'_ str {
+        self.0.reborrow().weight
+    }
+    /// Field 15: `total_weight`
+    #[must_use]
+    pub fn total_weight(&self) -> &'_ str {
+        self.0.reborrow().total_weight
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<GaugeEventView<'static>>>
+for GaugeEventOwnedView {
+    fn from(inner: ::buffa::OwnedView<GaugeEventView<'static>>) -> Self {
+        GaugeEventOwnedView(inner)
+    }
+}
+impl ::core::convert::From<GaugeEventOwnedView>
+for ::buffa::OwnedView<GaugeEventView<'static>> {
+    fn from(wrapper: GaugeEventOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<GaugeEventView<'static>>>
+for GaugeEventOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<GaugeEventView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::GaugeEvent {
+    type View<'a> = GaugeEventView<'a>;
+    type ViewHandle = GaugeEventOwnedView;
+}
+#[derive(Clone, Debug, Default)]
+pub struct GaugeEventsView<'a> {
+    /// Field 1: `events`
+    pub events: ::buffa::RepeatedView<
+        'a,
+        super::super::__buffa::view::GaugeEventView<'a>,
+    >,
+}
+impl<'a> ::buffa::MessageView<'a> for GaugeEventsView<'a> {
+    type Owned = super::super::GaugeEvents;
+    fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let __elem = ::core::cell::Cell::new(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+        <Self as ::buffa::MessageView>::decode_view_ctx(
+            buf,
+            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit)
+                .with_element_memory(&__elem),
+        )
+    }
+    fn decode_view_with_ctx(
+        buf: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
+    }
+    #[inline]
+    fn merge_view_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        cur: &'a [u8],
+        _before_tag: &'a [u8],
+        ctx: ::buffa::DecodeContext<'_>,
+    ) -> ::core::result::Result<&'a [u8], ::buffa::DecodeError> {
+        let _ = ctx;
+        #[allow(unused_variables)]
+        let view = self;
+        let mut cur = cur;
+        match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                let __sub_ctx = ctx.descend()?;
+                let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                ctx.register_element_memory(
+                    ::core::mem::size_of::<super::super::__buffa::view::GaugeEventView>(),
+                )?;
+                view.events
+                    .push(
+                        <super::super::__buffa::view::GaugeEventView as ::buffa::MessageView>::decode_view_ctx(
+                            sub,
+                            __sub_ctx,
+                        )?,
+                    );
+            }
+            _ => {
+                ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+            }
+        }
+        ::core::result::Result::Ok(cur)
+    }
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::GaugeEvents, ::buffa::DecodeError> {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> ::core::result::Result<super::super::GaugeEvents, ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
+        ::core::result::Result::Ok(super::super::GaugeEvents {
+            events: self
+                .events
+                .iter()
+                .map(|v| v.to_owned_from_source(__buffa_src))
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            ..::core::default::Default::default()
+        })
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for GaugeEventsView<'a> {
+    #[allow(clippy::needless_borrow, clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u64;
+        for v in &self.events {
+            let __slot = __cache.reserve();
+            let inner_size = v.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size
+                += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
+        }
+        ::buffa::saturate_size(size)
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::EncodeSink,
+    ) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.events {
+            ::buffa::types::put_len_delimited_header(
+                1u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
+            v.write_to(__cache, buf);
+        }
+    }
+}
+impl<'a> ::buffa::MessageName for GaugeEventsView<'a> {
+    const PACKAGE: &'static str = "aerodrome";
+    const NAME: &'static str = "GaugeEvents";
+    const FULL_NAME: &'static str = "aerodrome.GaugeEvents";
+    const TYPE_URL: &'static str = "type.googleapis.com/aerodrome.GaugeEvents";
+}
+::buffa::impl_default_view_instance!(GaugeEventsView);
+::buffa::impl_view_reborrow!(GaugeEventsView);
+/** Self-contained, `'static` owned view of a `GaugeEvents` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`GaugeEventsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`GaugeEventsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct GaugeEventsOwnedView(::buffa::OwnedView<GaugeEventsView<'static>>);
+impl GaugeEventsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GaugeEventsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GaugeEventsOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::GaugeEvents,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GaugeEventsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`GaugeEventsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &GaugeEventsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    ///
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::GaugeEvents {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `events`
+    #[must_use]
+    pub fn events(
+        &self,
+    ) -> &::buffa::RepeatedView<'_, super::super::__buffa::view::GaugeEventView<'_>> {
+        &self.0.reborrow().events
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<GaugeEventsView<'static>>>
+for GaugeEventsOwnedView {
+    fn from(inner: ::buffa::OwnedView<GaugeEventsView<'static>>) -> Self {
+        GaugeEventsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<GaugeEventsOwnedView>
+for ::buffa::OwnedView<GaugeEventsView<'static>> {
+    fn from(wrapper: GaugeEventsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<GaugeEventsView<'static>>>
+for GaugeEventsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<GaugeEventsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::GaugeEvents {
+    type View<'a> = GaugeEventsView<'a>;
+    type ViewHandle = GaugeEventsOwnedView;
 }

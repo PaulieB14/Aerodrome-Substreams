@@ -1,11 +1,13 @@
 specVersion: v0.1.0
 package:
   name: "aerodrome_substreams"
-  version: v0.4.0
+  version: v1.0.0
   description: |
     Substreams for Aerodrome Finance on Base, covering both the v2 AMM and
-    Slipstream concentrated liquidity -- including Coinbase B20 tokenized-stock
-    markets, which trade exclusively in Slipstream pools.
+    Slipstream concentrated liquidity -- including Coinbase-issued B20 tokenized
+    stocks (classic and Slipstream pools): a stock registry, stock swaps with
+    multiplier-adjusted share amounts and USD notional, daily per-ticker volume,
+    corporate actions, and Voter gauge/vote events.
 
     Pools are discovered from factory PoolCreated events, so pools for tokenized
     stocks that have not listed yet are indexed automatically with no code change.
@@ -15,6 +17,7 @@ package:
 imports:
   eth: https://github.com/streamingfast/substreams-ethereum/releases/download/v0.10.6/substreams-ethereum-v0.10.6.spkg
   database: https://github.com/streamingfast/substreams-sink-database-changes/releases/download/v5.0.0/substreams-sink-database-changes-v5.0.0.spkg
+  ethcommon: https://spkg.io/streamingfast/ethereum-common-v0.3.0.spkg
 
 protobuf:
   files:
@@ -60,9 +63,15 @@ modules:
   - name: map_pools
     kind: map
     initialBlock: 3200559
+    blockFilter:
+      module: ethcommon:index_events
+      query:
+        string: "evt_sig:0x2128d88d14c80cb081c1252a5acff7a264671bf199ce226b53788fb26065005e || evt_sig:0xab0d57f0df537bb25e80245ef7748fa62353808c54d6e528a9dd20887aed9ac2"
     inputs:
+      - params: string
       - source: sf.ethereum.type.v2.Block
       - store: store_factories
+      - store: store_stock_registry
     output:
       type: proto:aerodrome.Pools
 
@@ -79,6 +88,10 @@ modules:
   - name: map_swaps
     kind: map
     initialBlock: 3200559
+    blockFilter:
+      module: ethcommon:index_events
+      query:
+        string: "evt_sig:0xb3e2773606abfd36b5bd91394b3a54d1398336c65005baf7bf7a05efeffaf75b"
     inputs:
       - source: sf.ethereum.type.v2.Block
       - store: store_pools
@@ -88,6 +101,10 @@ modules:
   - name: map_liquidity
     kind: map
     initialBlock: 3200559
+    blockFilter:
+      module: ethcommon:index_events
+      query:
+        string: "evt_sig:0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f || evt_sig:0x5d624aa9c148153ab3446c1b154f660ee7701e549fe9b62dab7171b1c80e6fa2"
     inputs:
       - source: sf.ethereum.type.v2.Block
       - store: store_pools
@@ -97,6 +114,10 @@ modules:
   - name: map_syncs
     kind: map
     initialBlock: 3200559
+    blockFilter:
+      module: ethcommon:index_events
+      query:
+        string: "evt_sig:0xcf2aa50876cdfbb541206f89af0ee78d44a2abf8d328e37fa4917f982149848a"
     inputs:
       - source: sf.ethereum.type.v2.Block
       - store: store_pools
@@ -107,6 +128,10 @@ modules:
   - name: map_cl_swaps
     kind: map
     initialBlock: 3200559
+    blockFilter:
+      module: ethcommon:index_events
+      query:
+        string: "evt_sig:0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
     inputs:
       - source: sf.ethereum.type.v2.Block
       - store: store_pools
@@ -116,6 +141,10 @@ modules:
   - name: map_cl_liquidity
     kind: map
     initialBlock: 3200559
+    blockFilter:
+      module: ethcommon:index_events
+      query:
+        string: "evt_sig:0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde || evt_sig:0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c || evt_sig:0x70935338e69775456a85ddef226c395fb668b63fa0115f5f20610b388e6ca9c0"
     inputs:
       - source: sf.ethereum.type.v2.Block
       - store: store_pools
@@ -166,6 +195,49 @@ modules:
       - map: map_cl_swaps
 
   # --- SQL sink -------------------------------------------------------------
+  # v1.0.0: tokenized-stock registry (auto-detected Coinbase listings, renames)
+  # and the B20 UI-multiplier timeline. Keys documented in src/stocks.rs.
+  - name: store_stock_registry
+    kind: store
+    initialBlock: 3200559
+    updatePolicy: set
+    valueType: string
+    inputs:
+      - map: map_b20_events
+
+  - name: map_stock_swaps
+    kind: map
+    initialBlock: 3200559
+    inputs:
+      - params: string
+      - map: map_swaps
+      - map: map_cl_swaps
+      - store: store_pools
+      - store: store_stock_registry
+    output:
+      type: proto:aerodrome.StockSwaps
+
+  - name: store_stock_daily_volume
+    kind: store
+    initialBlock: 3200559
+    updatePolicy: add
+    valueType: bigdecimal
+    inputs:
+      - map: map_stock_swaps
+
+  # Voter (0x16613524...80a5, aerodrome-finance/contracts README): gauges and votes.
+  - name: map_gauge_events
+    kind: map
+    initialBlock: 3200559
+    blockFilter:
+      module: ethcommon:index_events
+      query:
+        string: "evt_addr:0x16613524e02ad97edfef371bc883f2f5d6c480a5"
+    inputs:
+      - source: sf.ethereum.type.v2.Block
+    output:
+      type: proto:aerodrome.GaugeEvents
+
   - name: db_out
     kind: map
     initialBlock: 3200559
@@ -175,8 +247,18 @@ modules:
       - map: map_cl_swaps
       - map: map_cl_liquidity
       - map: map_b20_events
+      - map: map_stock_swaps
+      - store: store_stock_daily_volume
+        mode: deltas
+      - store: store_stock_registry
+      - map: map_gauge_events
     output:
       type: proto:sf.substreams.sink.database.v1.DatabaseChanges
+
+params:
+  # Extra stock tokens beyond the built-in Coinbase list: "0xaddr:TICKER,0xaddr:TICKER".
+  map_pools: ""
+  map_stock_swaps: ""
 
 sink:
   module: db_out
