@@ -137,8 +137,14 @@ fn dec(raw: &BigInt, decimals: i32) -> BigDecimal {
     BigDecimal::from(raw.clone()) / BigDecimal::from(scale)
 }
 
+/// Decimal string with at most 30 significant digits and no trailing zeros.
 fn s(v: BigDecimal) -> String {
-    v.with_prec(30).to_string()
+    let out = v.with_prec(30).to_string();
+    if out.contains('.') {
+        out.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        out
+    }
 }
 
 fn pool_decimals(pool: &Pool, stock_is_0: bool, quote: &str) -> (i32, i32) {

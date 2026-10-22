@@ -529,8 +529,13 @@ pub fn db_out(
     for event in &cl_liquidity.events {
         let event_id = format!("{}:{}", event.transaction_hash, event.log_index);
 
-        tables
-            .create_row("aerodrome_cl_liquidity", &event_id)
+        let row = tables.create_row("aerodrome_cl_liquidity", &event_id);
+        // `amount` (liquidity delta) is empty for Collect; NULL instead of an
+        // invalid empty NUMERIC string.
+        if !event.amount.is_empty() {
+            row.set("amount", &event.amount);
+        }
+        row
             .set("tx_hash", &event.transaction_hash)
             .set("log_index", event.log_index)
             .set("block_number", event.block_number)
